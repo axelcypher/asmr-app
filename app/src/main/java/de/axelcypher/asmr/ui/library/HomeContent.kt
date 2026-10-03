@@ -29,7 +29,14 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
@@ -188,30 +195,67 @@ private fun TrackRow(
                 onAction = { onAction(items[index], it) },
                 modifier = Modifier.width(120.dp),
                 showDetails = showDetails,
+                titleLines = 1,
             )
         }
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+/**
+ * Playlist-Kachel: Name und Status liegen im Bild, auf einem nach unten zunehmend unscharfen und
+ * abgedunkelten unteren Drittel (Unschärfe ab Android 12, darunter nur der Verlauf).
+ */
 @Composable
 fun PlaylistCard(playlist: PlaylistDto, context: CardContext, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Column(modifier.clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Box {
-            Cover(
-                url = playlist.coverItemId?.let { "${AsmrClient.coverUrl(context.serverUrl, it)}?v=${context.imageVersion}" },
-                placeholder = AppIcons.Library,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-            )
-            Badge("${playlist.itemCount}", Modifier.align(Alignment.BottomEnd))
-        }
-        Text(playlist.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(
-            if (playlist.isMine) (if (playlist.shared) "Geteilt" else "Privat") else "von ${playlist.ownerName}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+    val url = playlist.coverItemId?.let { "${AsmrClient.coverUrl(context.serverUrl, it)}?v=${context.imageVersion}" }
+    Box(
+        modifier
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(onClick = onClick),
+    ) {
+        Icon(
+            AppIcons.Library, null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.align(Alignment.Center).size(36.dp),
         )
+        if (url != null) {
+            AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            // Unscharfe Kopie, per Verlaufsmaske nur im unteren Drittel sichtbar.
+            AsyncImage(
+                model = url,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                    .drawWithContent {
+                        drawContent()
+                        drawRect(
+                            Brush.verticalGradient(0.55f to Color.Transparent, 0.75f to Color.Black),
+                            blendMode = BlendMode.DstIn,
+                        )
+                    }
+                    .blur(18.dp, BlurredEdgeTreatment.Rectangle),
+            )
+        }
+        Box(
+            Modifier
+                .matchParentSize()
+                .background(Brush.verticalGradient(0.5f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.65f))),
+        )
+        Badge("${playlist.itemCount}", Modifier.align(Alignment.TopEnd))
+        Column(Modifier.align(Alignment.BottomStart).padding(horizontal = 10.dp, vertical = 8.dp)) {
+            Text(playlist.name, style = MaterialTheme.typography.titleSmall, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                if (playlist.isMine) (if (playlist.shared) "Geteilt" else "Privat") else "von ${playlist.ownerName}",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White.copy(alpha = 0.8f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 

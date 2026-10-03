@@ -81,6 +81,7 @@ fun TrackCard(
     onAction: (ItemAction) -> Unit,
     modifier: Modifier = Modifier,
     showDetails: Boolean = true,
+    titleLines: Int = 2,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val download = context.downloads[item.id]
@@ -110,7 +111,7 @@ fun TrackCard(
                 }
             }
         }
-        Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = titleLines, overflow = TextOverflow.Ellipsis)
         if (showDetails) {
             item.creator?.let {
                 Text(
