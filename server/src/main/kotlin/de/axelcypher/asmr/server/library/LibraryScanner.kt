@@ -104,7 +104,7 @@ class LibraryScanner(
         return withContext(Dispatchers.IO) {
             val dir = mediaDir.resolve(folder)
             if (!dir.isDirectory()) return@withContext known.isNotEmpty()
-            val entries = dir.listDirectoryEntries().filterNot { it.name.startsWith(".") }
+            val entries = dir.listDirectoryEntries().filterNot { isIgnored(it.name) }
             val diskFiles = entries.filter { it.isRegularFile() && it.extension.lowercase() in MEDIA_EXTENSIONS }
                 .map { it.name }.toSet()
             val diskFolders = entries.filter { it.isDirectory() }.map { it.name }.toSet()
@@ -218,7 +218,7 @@ class LibraryScanner(
         Files.walk(mediaDir).use { stream ->
             stream.filter { it != mediaDir && it.isDirectory() }
                 .map(::relativePath)
-                .filter { path -> path.split('/').none { it.startsWith(".") } }
+                .filter { path -> path.split('/').none(::isIgnored) }
                 .toList()
         }
     }
@@ -231,7 +231,7 @@ class LibraryScanner(
 
     private fun resolveFolder(folder: String): Path {
         val clean = folder.trim().trim('/').replace('\\', '/')
-        if (clean.split('/').any { it == ".." || it.startsWith(".") }) throw LibraryException("Ungültiger Ordner")
+        if (clean.split('/').any { it == ".." || isIgnored(it) }) throw LibraryException("Ungültiger Ordner")
         val dir = mediaDir.resolve(clean).normalize()
         if (!dir.startsWith(mediaDir.normalize())) throw LibraryException("Ungültiger Ordner")
         return dir
@@ -240,7 +240,8 @@ class LibraryScanner(
     private suspend fun removeMissing(present: Set<String>): Int {
         var removed = 0
         for ((id, path) in items.audioPathsById()) {
-            if (path !in present && !mediaDir.resolve(path).exists()) {
+            // Verschwunden oder inzwischen in einem ignorierten Ordner (z.B. @eaDir): Eintrag entfernen.
+            if (path !in present && (!mediaDir.resolve(path).exists() || path.split('/').any(::isIgnored))) {
                 items.delete(id)
                 removed++
             }
@@ -282,7 +283,7 @@ class LibraryScanner(
         if (!mediaDir.isDirectory()) return emptyList()
         return Files.walk(mediaDir).use { stream ->
             stream.filter { it.isRegularFile() && it.extension.lowercase() in MEDIA_EXTENSIONS }
-                .filter { path -> path.relativeTo(mediaDir).none { it.toString().startsWith(".") } }
+                .filter { path -> path.relativeTo(mediaDir).none { isIgnored(it.toString()) } }
                 .toList()
         }
     }
@@ -356,3 +357,10 @@ internal fun renamedPrefix(oldPath: String, newPath: String): Pair<String, Strin
     while (common < old.size && common < new.size && old[old.size - 1 - common] == new[new.size - 1 - common]) common++
     return old.dropLast(common).joinToString("/") to new.dropLast(common).joinToString("/")
 }
+
+/**
+ * Versteckte und System-Ordner, die nie zur Bibliothek gehören: `.xyz`, Synology-Vorschauen und
+ * -Metadaten (`@eaDir`, `@tmp`, …) sowie Papierkorb und Snapshots.
+ */
+fun isIgnored(name: String): Boolean =
+    name.startsWith(".") || name.startsWith("@") || name.equals("#recycle", true) || name.equals("#snapshot", true)

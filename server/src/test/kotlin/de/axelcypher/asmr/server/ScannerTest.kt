@@ -112,6 +112,26 @@ class ScannerTest {
     }
 
     @Test
+    fun `synology-systemordner werden ignoriert`() = runBlocking {
+        file("Gibi ASMR/real.mp3")
+        file("Gibi ASMR/@eaDir/real.mp3/SYNOAUDIO.mp3")
+        file("#recycle/old.mp3")
+        // Ein Eintrag aus der Zeit vor dem Fix, der in @eaDir liegt, muss beim Scan verschwinden.
+        items.add(
+            de.axelcypher.asmr.server.db.NewItem(
+                "alt", null, null, "Gibi ASMR/@eaDir/real.mp3/SYNOAUDIO.mp3", null, null, null, null, emptyMap(),
+            ),
+        )
+
+        val result = scanner.scan()
+        assertEquals(1, result.added)
+        assertEquals(1, result.removed)
+        assertEquals(setOf("Gibi ASMR/real.mp3"), items.audioPaths())
+        assertEquals(listOf("Gibi ASMR"), scanner.folders())
+        assertTrue(!scanner.isStale("Gibi ASMR"), "@eaDir zählt nicht als Abweichung")
+    }
+
+    @Test
     fun `leerer medienordner loescht nichts`() = runBlocking {
         val f = file("a.mp3")
         scanner.scan()
