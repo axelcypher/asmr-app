@@ -116,6 +116,7 @@ class Database private constructor(private val connection: Connection) {
                 updated_at INTEGER NOT NULL
             )
             """,
+            "CREATE UNIQUE INDEX items_audio_path ON items(audio_path)",
         )
     }
 }

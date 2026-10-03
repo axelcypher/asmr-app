@@ -47,6 +47,15 @@ class ItemStore(private val db: Database, private val now: () -> Long = System::
         id
     }
 
+    suspend fun idByAudioPath(audioPath: String): Long? =
+        db.tx { queryOne("SELECT id FROM items WHERE audio_path = ?", audioPath) { it.getLong(1) } }
+
+    suspend fun audioPaths(): Set<String> =
+        db.tx { query("SELECT audio_path FROM items") { it.getString(1) }.toSet() }
+
+    suspend fun audioPathsById(): List<Pair<Long, String>> =
+        db.tx { query("SELECT id, audio_path FROM items") { it.getLong(1) to it.getString(2) } }
+
     suspend fun idBySourceKey(sourceKey: String): Long? =
         db.tx { queryOne("SELECT id FROM items WHERE source_key = ?", sourceKey) { it.getLong(1) } }
 

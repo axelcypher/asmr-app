@@ -13,6 +13,8 @@ data class Config(
     /** Öffentliche Basis-URL, wird für den OIDC-Callback gebraucht. */
     val publicUrl: String?,
     val ytDlp: String,
+    /** Wie oft der Medienordner nach neuen Dateien durchsucht wird. */
+    val scanIntervalMinutes: Int,
     val oidc: OidcConfig?,
 ) {
     companion object {
@@ -41,6 +43,7 @@ data class Config(
                 mediaDir = Path(value("ASMR_MEDIA_DIR") ?: "/media"),
                 publicUrl = publicUrl,
                 ytDlp = value("ASMR_YTDLP") ?: "yt-dlp",
+                scanIntervalMinutes = value("ASMR_SCAN_INTERVAL_MINUTES")?.toInt() ?: 30,
                 oidc = oidc,
             )
         }

@@ -10,6 +10,8 @@ import de.axelcypher.asmr.server.db.ItemStore
 import de.axelcypher.asmr.server.db.UserStore
 import de.axelcypher.asmr.server.imports.ImportWorker
 import de.axelcypher.asmr.server.imports.YtDlpDownloader
+import de.axelcypher.asmr.server.library.FfmpegProbe
+import de.axelcypher.asmr.server.library.LibraryScanner
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -20,8 +22,10 @@ import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
 import org.slf4j.LoggerFactory
 import kotlin.io.path.createDirectories
+import kotlin.time.Duration.Companion.minutes
 
 fun main() {
     val log = LoggerFactory.getLogger("asmr")
@@ -46,18 +50,23 @@ fun main() {
     }
     log.info("SSO {}", if (sso != null) "aktiv (${sso.providerName})" else "nicht eingerichtet")
 
+    val libraryLock = Mutex()
+    val coverDir = config.dataDir.resolve("covers").createDirectories()
+    val scanner = LibraryScanner(items, config.mediaDir, coverDir, FfmpegProbe(), libraryLock)
     val worker = ImportWorker(
         imports = imports,
         items = items,
         downloader = YtDlpDownloader(config.ytDlp),
         tempDir = config.dataDir.resolve("tmp").createDirectories(),
         mediaDir = config.mediaDir,
+        libraryLock = libraryLock,
     )
-    val services = Services(users, items, imports, worker, sso, config.mediaDir)
+    val services = Services(users, items, imports, worker, sso, scanner, config.mediaDir, coverDir)
 
     embeddedServer(Netty, port = config.port) {
         asmrModule(services)
         worker.start(this)
+        scanner.start(this, config.scanIntervalMinutes.minutes)
     }.start(wait = true)
 }
 

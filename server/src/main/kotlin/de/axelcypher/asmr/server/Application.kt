@@ -8,6 +8,7 @@ import de.axelcypher.asmr.server.db.ItemStore
 import de.axelcypher.asmr.server.db.UserRecord
 import de.axelcypher.asmr.server.db.UserStore
 import de.axelcypher.asmr.server.imports.ImportWorker
+import de.axelcypher.asmr.server.library.LibraryScanner
 import de.axelcypher.asmr.server.routes.authRoutes
 import de.axelcypher.asmr.server.routes.importRoutes
 import de.axelcypher.asmr.server.routes.itemRoutes
@@ -44,7 +45,10 @@ class Services(
     val imports: ImportStore,
     val worker: ImportWorker,
     val sso: SsoService?,
+    val scanner: LibraryScanner,
     val mediaDir: Path,
+    /** Erzeugte Video-Vorschaubilder (`@covers/…`). */
+    val coverDir: Path,
 )
 
 data class UserPrincipal(val user: UserRecord, val token: String)

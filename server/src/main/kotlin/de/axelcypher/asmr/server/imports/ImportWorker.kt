@@ -9,6 +9,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
@@ -25,6 +27,8 @@ class ImportWorker(
     private val downloader: Downloader,
     private val tempDir: Path,
     private val mediaDir: Path,
+    /** Mit dem [de.axelcypher.asmr.server.library.LibraryScanner] geteilt. */
+    private val libraryLock: Mutex,
 ) {
     private val log = LoggerFactory.getLogger(ImportWorker::class.java)
     private val queue = Channel<Long>(Channel.UNLIMITED)
@@ -60,17 +64,17 @@ class ImportWorker(
         }
     }
 
-    private suspend fun store(download: Download): Long {
+    private suspend fun store(download: Download): Long = libraryLock.withLock {
         val info = download.info
         val sourceKey = "${info.extractor}:${info.id}"
-        items.idBySourceKey(sourceKey)?.let { return it }
+        items.idBySourceKey(sourceKey)?.let { return@withLock it }
 
         val folder = mediaDir.resolve(safeName(info.uploader ?: "Unbekannt")).createDirectories()
         val baseName = "${safeName(info.title)} [${safeName(info.id)}]"
         val audio = move(download.audio, folder.resolve("$baseName.${download.audio.extension}"))
         val cover = download.cover?.let { move(it, folder.resolve("$baseName.jpg")) }
 
-        return items.add(
+        items.add(
             NewItem(
                 title = info.title,
                 creator = info.uploader,

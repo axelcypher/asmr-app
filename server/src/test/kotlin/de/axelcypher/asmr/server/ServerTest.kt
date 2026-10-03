@@ -22,6 +22,7 @@ import de.axelcypher.asmr.server.imports.Download
 import de.axelcypher.asmr.server.imports.Downloader
 import de.axelcypher.asmr.server.imports.ImportWorker
 import de.axelcypher.asmr.server.imports.SourceInfo
+import de.axelcypher.asmr.server.library.LibraryScanner
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.mock.MockEngine
@@ -46,6 +47,7 @@ import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlinx.coroutines.sync.Mutex
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.writeBytes
@@ -87,7 +89,9 @@ class ServerTest {
             ),
         )
     }
-    private val worker = ImportWorker(imports, items, fakeDownloader, root.resolve("tmp"), mediaDir)
+    private val libraryLock = Mutex()
+    private val worker = ImportWorker(imports, items, fakeDownloader, root.resolve("tmp"), mediaDir, libraryLock)
+    private val scanner = LibraryScanner(items, mediaDir, root.resolve("covers"), FakeProbe, libraryLock)
 
     @AfterTest
     fun cleanup() {
@@ -96,7 +100,7 @@ class ServerTest {
     }
 
     private fun serverTest(sso: SsoService? = null, block: suspend ApplicationTestBuilder.(HttpClient) -> Unit) {
-        val services = Services(users, items, imports, worker, sso, mediaDir)
+        val services = Services(users, items, imports, worker, sso, scanner, mediaDir, root.resolve("covers"))
         testApplication {
             application { asmrModule(services) }
             val client = createClient {

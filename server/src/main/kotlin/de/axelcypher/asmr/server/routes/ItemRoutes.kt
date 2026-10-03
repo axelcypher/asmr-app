@@ -6,6 +6,7 @@ import de.axelcypher.asmr.server.ApiException
 import de.axelcypher.asmr.server.Services
 import de.axelcypher.asmr.server.currentUser
 import de.axelcypher.asmr.server.db.ItemQuery
+import de.axelcypher.asmr.server.library.LibraryScanner
 import de.axelcypher.asmr.server.longParameter
 import de.axelcypher.asmr.server.requireAdmin
 import io.ktor.http.HttpStatusCode
@@ -16,6 +17,8 @@ import io.ktor.server.response.respondFile
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
+import io.ktor.server.routing.post
+import kotlinx.coroutines.launch
 import io.ktor.server.routing.patch
 import io.ktor.server.routing.put
 import io.ktor.server.routing.route
@@ -27,6 +30,13 @@ private const val MAX_PAGE_SIZE = 200
 
 fun Route.itemRoutes(services: Services) {
     get("/tags") { call.respond(services.items.tags()) }
+
+    // Läuft im Hintergrund; das Ergebnis steht im Log, die App lädt danach neu.
+    post("/library/scan") {
+        call.requireAdmin()
+        call.application.launch { services.scanner.scan() }
+        call.respond(HttpStatusCode.Accepted)
+    }
 
     route("/items") {
         get {
@@ -93,10 +103,14 @@ fun Route.itemRoutes(services: Services) {
 
 private fun notFound(): Nothing = throw ApiException(HttpStatusCode.NotFound, "Nicht gefunden")
 
-/** Löst einen in der DB gespeicherten relativen Pfad auf, ohne den Medienordner verlassen zu können. */
+/**
+ * Löst einen in der DB gespeicherten relativen Pfad auf, ohne den Medien- bzw. Cover-Ordner
+ * verlassen zu können.
+ */
 private fun ApplicationCall.mediaFile(services: Services, relative: String): Path {
-    val root = services.mediaDir.toAbsolutePath().normalize()
-    val file = root.resolve(relative).normalize()
+    val isGeneratedCover = relative.startsWith(LibraryScanner.DATA_COVER_PREFIX)
+    val root = (if (isGeneratedCover) services.coverDir else services.mediaDir).toAbsolutePath().normalize()
+    val file = root.resolve(relative.removePrefix(LibraryScanner.DATA_COVER_PREFIX)).normalize()
     if (!file.startsWith(root)) throw ApiException(HttpStatusCode.NotFound, "Nicht gefunden")
     return file
 }
