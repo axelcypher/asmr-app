@@ -67,6 +67,13 @@ class AppContainer(context: Context) {
         }
     }
 
+    /** Letzte Bildfehler (neueste zuerst), für die Diagnose im Profil. */
+    val imageErrors = MutableStateFlow<List<String>>(emptyList())
+
+    fun reportImageError(message: String) {
+        imageErrors.value = (listOf(message) + imageErrors.value).take(5)
+    }
+
     fun onSsoRedirect(uri: Uri) {
         ssoRedirectChannel.trySend(uri)
     }

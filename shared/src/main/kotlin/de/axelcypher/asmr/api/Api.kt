@@ -214,7 +214,8 @@ data class HomeDto(
 
 /** Icons, aus denen der Admin für Kategorien wählt (Pfade liegen in der App). */
 val CATEGORY_ICONS = listOf(
-    "headphones", "music", "mic", "ear", "speaker", "leaf", "tree", "water", "cloud", "fire", "bolt", "sun", "moon",
+    "headphones", "music", "mic", "ear", "speaker", "equalizer", "bars", "sine", "pulse", "ripple",
+    "leaf", "tree", "water", "cloud", "fire", "bolt", "sun", "moon",
     "star", "heart", "smile", "meditation", "bed", "home", "coffee", "book", "brush",
 )
 

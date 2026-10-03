@@ -157,8 +157,20 @@ object AppIcons {
             "M20.71,4.63l-1.34,-1.34c-0.39,-0.39 -1.02,-0.39 -1.41,0L9,12.25 11.75,15l8.96,-8.96c0.39,-0.39 0.39,-1.02 0,-1.41z",
     )
 
+    // Wellenformen; die drei Linien-Icons werden als Strich gezeichnet.
+    val Equalizer by icon("M7,18h2V6H7v12zM11,22h2V2h-2v20zM3,14h2v-4H3v4zM15,18h2V6h-2v12zM19,10v4h2v-4h-2z")
+    val Bars by icon("M3,11h2v2H3zM7,8h2v8H7zM11,4h2v16h-2zM15,9h2v6h-2zM19,6h2v12h-2z")
+    val Sine by strokeIcon("M1,12Q4.5,4 8,12T15,12T22,12")
+    val Pulse by strokeIcon("M2,12h4l2,-6l4,12l3,-9l2,3h5")
+    val Ripple by strokeIcon("M6,9.5a3,3 0 0 1 0,5M10,6.5a7,7 0 0 1 0,11M14,3.5a11,11 0 0 1 0,17M2.5,12h0.01")
+
     /** Icons für Kategorien, Schlüssel wie in [de.axelcypher.asmr.api.CATEGORY_ICONS]. */
     fun category(key: String) = when (key) {
+        "equalizer" -> Equalizer
+        "bars" -> Bars
+        "sine" -> Sine
+        "pulse" -> Pulse
+        "ripple" -> Ripple
         "music" -> Music
         "mic" -> Mic
         "ear" -> Ear
@@ -181,6 +193,19 @@ object AppIcons {
         "book" -> Book
         "brush" -> Brush
         else -> Headphones
+    }
+
+    private fun strokeIcon(pathData: String) = lazy {
+        ImageVector.Builder(defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
+            .addPath(
+                pathData = addPathNodes(pathData),
+                fill = null,
+                stroke = SolidColor(Color.Black),
+                strokeLineWidth = 2f,
+                strokeLineCap = androidx.compose.ui.graphics.StrokeCap.Round,
+                strokeLineJoin = androidx.compose.ui.graphics.StrokeJoin.Round,
+            )
+            .build()
     }
 
     private fun icon(pathData: String) = lazy {

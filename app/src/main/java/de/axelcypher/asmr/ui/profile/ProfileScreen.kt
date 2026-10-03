@@ -42,6 +42,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.axelcypher.asmr.BuildConfig
 import de.axelcypher.asmr.api.UserDto
 import de.axelcypher.asmr.ui.AppIcons
+import kotlinx.coroutines.launch
 
 private const val MIN_PASSWORD_LENGTH = 10
 
@@ -81,11 +82,52 @@ fun ProfileScreen(viewModel: ProfileViewModel, onClose: () -> Unit) {
                 if (me.isAdmin) AdminCard(me, state.users, state.isBusy, viewModel)
             }
             OutlinedButton(onClick = viewModel::logout, modifier = Modifier.fillMaxWidth()) { Text("Abmelden") }
+            DiagnosticsCard()
             Text(
                 "App-Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+/** Bildfehler und ein Test, der ein Cover am Cache vorbei über denselben Bildlader lädt. */
+@Composable
+private fun DiagnosticsCard() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val container = (context.applicationContext as de.axelcypher.asmr.AsmrApp).container
+    val errors by container.imageErrors.collectAsStateWithLifecycle()
+    var result by remember { mutableStateOf<String?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Diagnose", style = MaterialTheme.typography.titleMedium)
+            Text("Letzte Bildfehler", style = MaterialTheme.typography.titleSmall)
+            if (errors.isEmpty()) Text("Keine", style = MaterialTheme.typography.bodySmall)
+            errors.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+            OutlinedButton(onClick = {
+                result = "Läuft …"
+                scope.launch {
+                    result = runCatching {
+                        val session = container.sessionStore.current() ?: return@runCatching "Nicht angemeldet"
+                        val home = container.asmrClient.home()
+                        val item = (home.favorites + home.ambient).firstOrNull { it.hasCover }
+                            ?: return@runCatching "Kein Track mit Cover in der Übersicht"
+                        val url = de.axelcypher.asmr.data.api.AsmrClient.coverUrl(session.serverUrl, item.id)
+                        val request = coil3.request.ImageRequest.Builder(context)
+                            .data(url)
+                            .memoryCachePolicy(coil3.request.CachePolicy.DISABLED)
+                            .diskCachePolicy(coil3.request.CachePolicy.DISABLED)
+                            .build()
+                        when (val r = coil3.SingletonImageLoader.get(context).execute(request)) {
+                            is coil3.request.SuccessResult -> "OK: ${r.image.width}×${r.image.height} von $url"
+                            is coil3.request.ErrorResult -> "Fehler bei $url: ${r.throwable}"
+                        }
+                    }.getOrElse { "Fehler: $it" }
+                }
+            }) { Text("Bild testen") }
+            result?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
     }
 }
