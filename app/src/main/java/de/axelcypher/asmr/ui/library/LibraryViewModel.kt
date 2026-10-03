@@ -3,9 +3,13 @@ package de.axelcypher.asmr.ui.library
 import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import de.axelcypher.asmr.api.AccessOverviewDto
+import de.axelcypher.asmr.api.FolderAccessDto
+import de.axelcypher.asmr.api.FolderDto
 import de.axelcypher.asmr.api.ImportJobDto
 import de.axelcypher.asmr.api.ImportStatus
 import de.axelcypher.asmr.api.ItemDto
+import de.axelcypher.asmr.api.UpdateItemRequest
 import de.axelcypher.asmr.data.api.AsmrClient
 import de.axelcypher.asmr.data.settings.PlaybackSettings
 import de.axelcypher.asmr.data.settings.SessionStore
@@ -27,16 +31,25 @@ import kotlinx.coroutines.launch
 
 data class LibraryUiState(
     val serverUrl: String = "",
+    val isAdmin: Boolean = false,
+    /** Aktueller Ordner, "" ist die oberste Ebene. */
+    val path: String = "",
+    val folders: List<FolderDto> = emptyList(),
     val items: List<ItemDto> = emptyList(),
-    val total: Int = 0,
     val isLoading: Boolean = false,
     val error: String? = null,
     val imports: List<ImportJobDto> = emptyList(),
     val update: AppUpdate? = null,
     val isDownloadingUpdate: Boolean = false,
+    /** Für den Zugriffs-Dialog, nur für Admins geladen. */
+    val access: AccessOverviewDto? = null,
+    /** Für den Verschieben-Dialog. */
+    val allFolders: List<String> = emptyList(),
+    /** Zählt hoch, wenn sich Bilder geändert haben; hängt als Parameter an Cover-URLs. */
+    val imageVersion: Int = 0,
 ) {
-    val canLoadMore get() = items.size < total
     val runningImports get() = imports.count { it.status == ImportStatus.QUEUED || it.status == ImportStatus.RUNNING }
+    val breadcrumbs: List<String> get() = if (path.isEmpty()) emptyList() else path.split('/')
 }
 
 class LibraryViewModel(
@@ -64,39 +77,84 @@ class LibraryViewModel(
     private var importsLoaded = false
 
     init {
-        reload()
+        viewModelScope.launch {
+            val session = sessionStore.current() ?: return@launch
+            _state.update { it.copy(serverUrl = session.serverUrl) }
+            runCatching { client.me() }.getOrNull()?.let { me -> _state.update { it.copy(isAdmin = me.isAdmin) } }
+        }
+        open("")
         refreshImports()
         checkForUpdate()
     }
 
-    fun reload() = load {
-        val session = sessionStore.current() ?: return@load
-        _state.update { it.copy(serverUrl = session.serverUrl, items = emptyList(), total = 0) }
-        loadPage(page = 0)
+    // --- Navigation -----------------------------------------------------------------------------
+
+    fun open(path: String) {
+        loadJob?.cancel()
+        _state.update { it.copy(path = path, isLoading = true, error = null) }
+        loadJob = viewModelScope.launch {
+            try {
+                val listing = client.folder(path)
+                _state.update { it.copy(folders = listing.folders, items = listing.items, isLoading = false) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.update { it.copy(isLoading = false, error = e.message ?: "Laden fehlgeschlagen") }
+            }
+        }
     }
 
-    fun loadMore() {
-        val current = _state.value
-        if (current.isLoading || !current.canLoadMore) return
-        load { loadPage(page = current.items.size / AsmrClient.PAGE_SIZE) }
+    fun reload() = open(_state.value.path)
+
+    /** Eine Ebene hoch; false, wenn schon oben. */
+    fun up(): Boolean {
+        val path = _state.value.path
+        if (path.isEmpty()) return false
+        open(path.substringBeforeLast('/', missingDelimiterValue = ""))
+        return true
     }
+
+    // --- Bearbeiten (Admin) ---------------------------------------------------------------------
+
+    fun saveItem(id: Long, request: UpdateItemRequest, done: String = "Gespeichert") = action(done) {
+        client.updateItem(id, request)
+        reload()
+    }
+
+    fun deleteItem(item: ItemDto) = action("\"${item.title}\" gelöscht") {
+        client.deleteItem(item.id)
+        reload()
+    }
+
+    fun createFolder(name: String) = action("Ordner angelegt") {
+        val path = _state.value.path
+        client.createFolder(if (path.isEmpty()) name.trim() else "$path/${name.trim()}")
+        reload()
+    }
+
+    fun loadAllFolders() = action(null) {
+        _state.update { it.copy(allFolders = client.allFolders()) }
+    }
+
+    fun loadAccess() = action(null) {
+        _state.update { it.copy(access = client.accessOverview()) }
+    }
+
+    /** Ohne Gruppen und Benutzer wird die Einschränkung aufgehoben. */
+    fun saveAccess(path: String, restricted: Boolean, groups: List<String>, userIds: List<Long>) =
+        action(if (restricted) "Zugriff eingeschränkt" else "Für alle sichtbar") {
+            if (restricted) client.setAccess(FolderAccessDto(path, groups, userIds)) else client.removeAccess(path)
+            _state.update { it.copy(access = client.accessOverview()) }
+            reload()
+        }
+
+    fun imagesChanged() = _state.update { it.copy(imageVersion = it.imageVersion + 1) }
 
     // --- Import ---------------------------------------------------------------------------------
 
-    fun startImport(url: String) {
-        viewModelScope.launch {
-            try {
-                client.startImport(url)
-                messageChannel.send("Import gestartet")
-                refreshImports()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: ClientRequestException) {
-                messageChannel.send(e.response.bodyAsText().substringAfter("\"error\":\"").substringBefore('"'))
-            } catch (e: Exception) {
-                messageChannel.send("Import fehlgeschlagen: ${e.message}")
-            }
-        }
+    fun startImport(url: String) = action("Import gestartet") {
+        client.startImport(url)
+        refreshImports()
     }
 
     /** Lädt die Importliste und fragt nach, solange noch Jobs laufen. */
@@ -156,22 +214,17 @@ class LibraryViewModel(
 
     // --- Intern ---------------------------------------------------------------------------------
 
-    private suspend fun loadPage(page: Int) {
-        val result = client.items(page)
-        _state.update { it.copy(items = it.items + result.items, total = result.total) }
-    }
-
-    private fun load(block: suspend () -> Unit) {
-        loadJob?.cancel()
-        _state.update { it.copy(isLoading = true, error = null) }
-        loadJob = viewModelScope.launch {
+    private fun action(success: String?, block: suspend () -> Unit) {
+        viewModelScope.launch {
             try {
                 block()
-                _state.update { it.copy(isLoading = false) }
+                success?.let { messageChannel.send(it) }
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: ClientRequestException) {
+                messageChannel.send(e.serverMessage())
             } catch (e: Exception) {
-                _state.update { it.copy(isLoading = false, error = e.message ?: "Laden fehlgeschlagen") }
+                messageChannel.send(e.message ?: "Fehlgeschlagen")
             }
         }
     }
@@ -180,3 +233,8 @@ class LibraryViewModel(
         const val IMPORT_POLL_MS = 3000L
     }
 }
+
+/** Der Server liefert Fehler als {"error": "..."}. */
+suspend fun ClientRequestException.serverMessage(): String =
+    response.bodyAsText().substringAfter("\"error\":\"", "").substringBefore('"')
+        .ifEmpty { "Fehler ${response.status.value}" }

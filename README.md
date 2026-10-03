@@ -28,6 +28,18 @@ mit Trigger-Tags, und Inhalte sollen per yt-dlp direkt auf dem Server importiert
   Metadaten. Trigger-Tags werden aus Titel und Beschreibung abgeleitet. Doppelte Quellen werden
   erkannt.
 - **Speicher:** Audiodateien und Cover auf dem NAS (`/media`, NFS), Datenbank in `/data`.
+- **Ordner:** Die Bibliothek spiegelt die Ordnerstruktur auf dem NAS (z.B. ein Ordner pro Creator);
+  Admins legen Ordner an und verschieben Tracks. Neue Dateien findet ein Scan (beim Start, alle 30 min,
+  per Knopf im Profil).
+- **Cover:** Bild mit dem Namen des Tracks, sonst `cover.*`/`folder.*` im Ordner, sonst (bei Videos)
+  ein Vorschaubild, sonst das Profilbild des Creators.
+- **Metadaten-Datei:** Titel, Creator und Bewertung stehen in `<name>.asmr.json` neben dem Track.
+  Die App ändert nur diese Datei, nie den Dateinamen; der Scan liest sie, auch nach Datenbankverlust.
+- **Bewertungsmatrix:** pro Track Stärke 0–10 je Trigger (Kisses, Talking, Licking, Scratching …);
+  angezeigt werden nur Trigger über 0. Erkannte Trigger starten bei 5.
+- **Zugriff:** Admins schränken Ordner (samt Unterordnern) auf SSO-Gruppen und/oder einzelne
+  Benutzer ein. Gesperrte Inhalte sind für andere unsichtbar, Admins sehen alles.
+- **Creator:** Links zu YouTube, Patreon, Fansly & Co. und ein Profilbild (Upload oder vom YouTube-Kanal).
 
 ### SSO
 

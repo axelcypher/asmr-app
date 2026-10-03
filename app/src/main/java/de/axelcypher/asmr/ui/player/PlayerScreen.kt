@@ -58,11 +58,17 @@ import coil3.compose.AsyncImage
 import de.axelcypher.asmr.data.api.AsmrClient
 import de.axelcypher.asmr.playback.PlaybackEngine
 import de.axelcypher.asmr.ui.AppIcons
+import de.axelcypher.asmr.ui.TriggerChips
 import de.axelcypher.asmr.ui.formatDuration
 import kotlinx.coroutines.delay
 
 @Composable
-fun PlayerScreen(engine: PlaybackEngine, serverUrl: String, onClose: () -> Unit) {
+fun PlayerScreen(
+    engine: PlaybackEngine,
+    serverUrl: String,
+    onClose: () -> Unit,
+    onCreator: (String) -> Unit,
+) {
     val player by engine.player.collectAsStateWithLifecycle()
     val ambient by engine.ambient.collectAsStateWithLifecycle()
     val timer by engine.sleepTimer.collectAsStateWithLifecycle()
@@ -121,9 +127,12 @@ fun PlayerScreen(engine: PlaybackEngine, serverUrl: String, onClose: () -> Unit)
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        item?.creator?.let {
-            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        item?.creator?.let { creator ->
+            TextButton(onClick = { onCreator(creator) }) {
+                Text(creator, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            }
         }
+        item?.let { TriggerChips(it.levels, Modifier.fillMaxWidth()) }
 
         SeekBar(position, duration, onSeek = engine::seekTo)
 

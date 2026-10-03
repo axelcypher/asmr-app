@@ -248,6 +248,14 @@ class LibraryApiTest {
         }.body<CreatorDto>()
         assertEquals(listOf("YouTube", "Patreon", "example.org"), creator.links.map { it.label })
 
+        // Upload aus der Galerie (rohe Bytes), danach Abruf vom YouTube-Kanal.
+        val uploaded = client.put("/api/creators/Gibi ASMR/avatar") {
+            bearerAuth(admin)
+            contentType(ContentType.Application.OctetStream)
+            setBody(PNG)
+        }
+        assertEquals(HttpStatusCode.OK, uploaded.status)
+        assertTrue(uploaded.body<CreatorDto>().hasAvatar)
         val fetched = client.post("/api/creators/Gibi ASMR/avatar/fetch") { bearerAuth(admin) }.body<CreatorDto>()
         assertTrue(fetched.hasAvatar)
 

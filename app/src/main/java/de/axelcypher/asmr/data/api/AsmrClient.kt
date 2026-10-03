@@ -1,15 +1,23 @@
 package de.axelcypher.asmr.data.api
 
 import de.axelcypher.asmr.api.ApiJson
+import de.axelcypher.asmr.api.AccessOverviewDto
 import de.axelcypher.asmr.api.AuthConfigDto
 import de.axelcypher.asmr.api.ChangePasswordRequest
+import de.axelcypher.asmr.api.CreateFolderRequest
 import de.axelcypher.asmr.api.CreateUserRequest
+import de.axelcypher.asmr.api.CreatorDto
+import de.axelcypher.asmr.api.FolderAccessDto
+import de.axelcypher.asmr.api.FolderListing
 import de.axelcypher.asmr.api.ImportJobDto
 import de.axelcypher.asmr.api.ImportRequest
+import de.axelcypher.asmr.api.ItemDto
 import de.axelcypher.asmr.api.ItemPage
 import de.axelcypher.asmr.api.LoginRequest
 import de.axelcypher.asmr.api.LoginResponse
 import de.axelcypher.asmr.api.SsoExchangeRequest
+import de.axelcypher.asmr.api.UpdateCreatorRequest
+import de.axelcypher.asmr.api.UpdateItemRequest
 import de.axelcypher.asmr.api.UserDto
 import de.axelcypher.asmr.data.settings.Session
 import de.axelcypher.asmr.data.settings.SessionStore
@@ -24,12 +32,14 @@ import io.ktor.client.plugins.auth.providers.bearer
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
+import io.ktor.client.request.patch
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.URLBuilder
+import io.ktor.http.encodeURLPathPart
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CancellationException
@@ -138,6 +148,66 @@ class AsmrClient(engine: HttpClientEngine, private val sessionStore: SessionStor
         httpClient.post("${requireSession().serverUrl}/api/library/scan")
     }
 
+    // --- Ordner und Bearbeiten ---
+
+    suspend fun folder(path: String): FolderListing =
+        httpClient.get("${base()}/api/folders") { parameter("path", path) }.body()
+
+    suspend fun allFolders(): List<String> = httpClient.get("${base()}/api/folders/all").body()
+
+    suspend fun createFolder(path: String) {
+        httpClient.post("${base()}/api/folders") {
+            contentType(ContentType.Application.Json)
+            setBody(CreateFolderRequest(path))
+        }
+    }
+
+    suspend fun updateItem(id: Long, request: UpdateItemRequest): ItemDto =
+        httpClient.patch("${base()}/api/items/$id") {
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+
+    suspend fun deleteItem(id: Long) {
+        httpClient.delete("${base()}/api/items/$id")
+    }
+
+    // --- Zugriff ---
+
+    suspend fun accessOverview(): AccessOverviewDto = httpClient.get("${base()}/api/admin/access").body()
+
+    suspend fun setAccess(rule: FolderAccessDto) {
+        httpClient.put("${base()}/api/admin/access") {
+            contentType(ContentType.Application.Json)
+            setBody(rule)
+        }
+    }
+
+    suspend fun removeAccess(path: String) {
+        httpClient.delete("${base()}/api/admin/access") { parameter("path", path) }
+    }
+
+    // --- Creator ---
+
+    suspend fun creator(name: String): CreatorDto = httpClient.get(creatorUrl(base(), name)).body()
+
+    suspend fun setCreatorLinks(name: String, links: List<String>): CreatorDto =
+        httpClient.put(creatorUrl(base(), name)) {
+            contentType(ContentType.Application.Json)
+            setBody(UpdateCreatorRequest(links))
+        }.body()
+
+    suspend fun uploadAvatar(name: String, image: ByteArray): CreatorDto =
+        httpClient.put("${creatorUrl(base(), name)}/avatar") {
+            contentType(ContentType.Application.OctetStream)
+            setBody(image)
+        }.body()
+
+    suspend fun fetchAvatar(name: String): CreatorDto =
+        httpClient.post("${creatorUrl(base(), name)}/avatar/fetch").body()
+
+    private suspend fun base() = requireSession().serverUrl
+
     private fun LoginResponse.toSession(baseUrl: String): Session {
         clearCachedTokens()
         return Session(baseUrl, user.username, token)
@@ -156,6 +226,13 @@ class AsmrClient(engine: HttpClientEngine, private val sessionStore: SessionStor
         fun coverUrl(serverUrl: String, itemId: Long) = "$serverUrl/api/items/$itemId/cover"
 
         fun audioUrl(serverUrl: String, itemId: Long) = "$serverUrl/api/items/$itemId/audio"
+
+        fun folderCoverUrl(serverUrl: String, path: String) =
+            URLBuilder("$serverUrl/api/folders/cover").apply { parameters.append("path", path) }.buildString()
+
+        fun creatorUrl(serverUrl: String, name: String) = "$serverUrl/api/creators/${name.encodeURLPathPart()}"
+
+        fun avatarUrl(serverUrl: String, name: String) = "${creatorUrl(serverUrl, name)}/avatar"
     }
 }
 
