@@ -55,7 +55,8 @@ fun main() {
 
     val libraryLock = Mutex()
     val coverDir = config.dataDir.resolve("covers").createDirectories()
-    val scanner = LibraryScanner(items, config.mediaDir, coverDir, FfmpegProbe(), libraryLock)
+    val folderAccess = FolderAccessStore(db)
+    val scanner = LibraryScanner(items, config.mediaDir, coverDir, FfmpegProbe(), libraryLock, folderAccess)
     val worker = ImportWorker(
         imports = imports,
         items = items,
@@ -68,7 +69,7 @@ fun main() {
         users = users,
         items = items,
         imports = imports,
-        folderAccess = FolderAccessStore(db),
+        folderAccess = folderAccess,
         creators = CreatorStore(db),
         worker = worker,
         sso = sso,

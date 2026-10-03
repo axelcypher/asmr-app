@@ -1,6 +1,7 @@
 package de.axelcypher.asmr.server.library
 
 import de.axelcypher.asmr.server.auth.sha256Hex
+import de.axelcypher.asmr.server.db.FolderAccessStore
 import de.axelcypher.asmr.server.db.ItemRecord
 import de.axelcypher.asmr.server.db.ItemStore
 import de.axelcypher.asmr.server.db.NewItem
@@ -31,7 +32,7 @@ import kotlin.io.path.nameWithoutExtension
 import kotlin.io.path.relativeTo
 import kotlin.time.Duration
 
-data class ScanResult(val found: Int, val added: Int, val removed: Int, val updated: Int = 0)
+data class ScanResult(val found: Int, val added: Int, val removed: Int, val updated: Int = 0, val moved: Int = 0)
 
 class LibraryException(message: String) : Exception(message)
 
@@ -49,6 +50,8 @@ class LibraryScanner(
     private val coverDir: Path,
     private val probe: MediaProbe,
     private val libraryLock: Mutex,
+    /** Zugriffsregeln wandern mit, wenn ein Ordner auf dem NAS umbenannt wird. */
+    private val folderAccess: FolderAccessStore? = null,
 ) {
     private val log = LoggerFactory.getLogger(LibraryScanner::class.java)
     private val running = Mutex()
@@ -63,6 +66,9 @@ class LibraryScanner(
     /** Läuft höchstens einmal gleichzeitig; ein zweiter Aufruf wartet und scannt dann erneut. */
     suspend fun scan(): ScanResult = running.withLock {
         val files = withContext(Dispatchers.IO) { mediaFiles() }
+        val present = files.map(::relativePath).toSet()
+        // Ist das NAS nicht gemountet, wirkt der Ordner leer: dann nichts verschieben oder löschen.
+        val moved = if (files.isEmpty()) 0 else followMoves(files, present)
         val known = items.audioPaths()
         var added = 0
         for (file in files) {
@@ -76,11 +82,78 @@ class LibraryScanner(
                 }
             }
         }
-        // Ist das NAS nicht gemountet, wirkt der Ordner leer: dann nichts löschen.
-        val removed = if (files.isEmpty()) 0 else removeMissing(files.map(::relativePath).toSet())
+        val removed = if (files.isEmpty()) 0 else removeMissing(present)
         val updated = if (files.isEmpty()) 0 else syncExisting()
-        log.info("Scan: {} Dateien, {} neu, {} entfernt, {} aktualisiert", files.size, added, removed, updated)
-        ScanResult(files.size, added, removed, updated)
+        log.info(
+            "Scan: {} Dateien, {} neu, {} verschoben, {} entfernt, {} aktualisiert",
+            files.size, added, moved, removed, updated,
+        )
+        ScanResult(files.size, added, removed, updated, moved)
+    }
+
+    /**
+     * Prüft billig (ein Verzeichnis lesen), ob ein Ordner noch zur Datenbank passt: gleiche Dateien
+     * direkt darin, und alle bekannten Unterordner existieren noch. Fängt Umbenennungen auf dem NAS ab,
+     * ohne bei jedem Aufruf alles zu scannen.
+     */
+    suspend fun isStale(folder: String): Boolean {
+        val prefix = if (folder.isEmpty()) "" else "$folder/"
+        val known = items.audioPaths().filter { it.startsWith(prefix) }.map { it.removePrefix(prefix) }
+        val knownFiles = known.filter { '/' !in it }.toSet()
+        val knownFolders = known.filter { '/' in it }.map { it.substringBefore('/') }.toSet()
+        return withContext(Dispatchers.IO) {
+            val dir = mediaDir.resolve(folder)
+            if (!dir.isDirectory()) return@withContext known.isNotEmpty()
+            val entries = dir.listDirectoryEntries().filterNot { it.name.startsWith(".") }
+            val diskFiles = entries.filter { it.isRegularFile() && it.extension.lowercase() in MEDIA_EXTENSIONS }
+                .map { it.name }.toSet()
+            val diskFolders = entries.filter { it.isDirectory() }.map { it.name }.toSet()
+            diskFiles != knownFiles || !diskFolders.containsAll(knownFolders)
+        }
+    }
+
+    /**
+     * Ein Track, der verschwunden ist, und eine neue Datei gleichen Namens woanders gelten als
+     * verschoben (z.B. Ordner auf dem NAS umbenannt): nur der Pfad ändert sich, Favoriten und
+     * Bewertung bleiben. Nur bei eindeutigem Namen, sonst lieber neu anlegen.
+     */
+    private suspend fun followMoves(files: List<Path>, present: Set<String>): Int = libraryLock.withLock {
+        val known = items.audioPathsById()
+        val knownPaths = known.map { it.second }.toSet()
+        val newByName = files.filter { relativePath(it) !in knownPaths }.groupBy { it.name }
+        val missing = known.filter { (_, path) -> path !in present }
+        val missingByName = missing.groupBy { it.second.substringAfterLast('/') }
+        val renames = mutableListOf<Pair<String, String>>()
+        for ((name, gone) in missingByName) {
+            val candidates = newByName[name] ?: continue
+            if (gone.size != 1 || candidates.size != 1) continue
+            val target = candidates.single()
+            withContext(Dispatchers.IO) { items.setPaths(gone.single().first, relativePath(target), findCover(target)) }
+            renames += gone.single().second to relativePath(target)
+        }
+        if (renames.isNotEmpty()) folderAccess?.let { followRenamedRules(it, renames) }
+        renames.size
+    }
+
+    /**
+     * Leitet aus verschobenen Tracks umbenannte Ordner ab (gemeinsames Ende der Pfade abschneiden:
+     * `A/Alt/x/t.mp3` -> `A/Neu/x/t.mp3` heißt `A/Alt` -> `A/Neu`) und zieht Zugriffsregeln nach.
+     * Nur eindeutige Zuordnungen, damit eine Sperre nie auf einem falschen Ordner landet.
+     */
+    private suspend fun followRenamedRules(access: FolderAccessStore, moves: List<Pair<String, String>>) {
+        val mapping = moves.map { (old, new) -> renamedPrefix(old, new) }
+            .filter { (from, to) -> from.isNotEmpty() && to.isNotEmpty() }
+            .groupBy({ it.first }, { it.second })
+            .filterValues { it.distinct().size == 1 }
+            .mapValues { it.value.first() }
+        for (rule in access.rules()) {
+            val (from, to) = mapping.entries.firstOrNull { rule.path == it.key || rule.path.startsWith("${it.key}/") }
+                ?: continue
+            val newPath = to + rule.path.removePrefix(from)
+            access.remove(rule.path)
+            access.set(rule.copy(path = newPath))
+            log.info("Zugriffsregel folgt umbenanntem Ordner: {} -> {}", rule.path, newPath)
+        }
     }
 
     /** Schreibt die aktuellen Metadaten eines Items in seine Metadaten-Datei. */
@@ -269,4 +342,13 @@ class LibraryScanner(
         fun cleanTitle(fileName: String): String =
             fileName.replace(TRAILING_ID, "").replace('_', ' ').trim().ifEmpty { fileName }
     }
+}
+
+/** Ordnerpaar (alt, neu) nach Abschneiden des gemeinsamen Endes; "" wenn nur die Datei gleich ist. */
+internal fun renamedPrefix(oldPath: String, newPath: String): Pair<String, String> {
+    val old = oldPath.split('/').dropLast(1)
+    val new = newPath.split('/').dropLast(1)
+    var common = 0
+    while (common < old.size && common < new.size && old[old.size - 1 - common] == new[new.size - 1 - common]) common++
+    return old.dropLast(common).joinToString("/") to new.dropLast(common).joinToString("/")
 }

@@ -73,7 +73,7 @@ class LibraryApiTest {
     private val folderAccess = FolderAccessStore(db)
     private val creators = CreatorStore(db)
     private val lock = Mutex()
-    private val scanner = LibraryScanner(items, media, root.resolve("covers"), FakeProbe, lock)
+    private val scanner = LibraryScanner(items, media, root.resolve("covers"), FakeProbe, lock, folderAccess)
 
     @AfterTest
     fun cleanup() {
@@ -233,6 +233,38 @@ class LibraryApiTest {
     }
 
     @Test
+    fun `ordner auf dem nas umbenannt - sofort sichtbar, ids, favoriten und sperre bleiben`() = api { client ->
+        file("Spicy/Alt/a.mp3")
+        file("Spicy/Alt/Sub/b.mp3")
+        users.create("admin", "geheimes-passwort", isAdmin = true)
+        users.create("alice", "geheimes-passwort", isAdmin = false)
+        scanner.scan()
+        val idA = items.idByAudioPath("Spicy/Alt/a.mp3")!!
+        val idB = items.idByAudioPath("Spicy/Alt/Sub/b.mp3")!!
+        val admin = client.login("admin")
+        client.put("/api/items/$idA/favorite") { bearerAuth(admin) }
+        client.put("/api/admin/access") {
+            bearerAuth(admin)
+            contentType(ContentType.Application.Json)
+            setBody(FolderAccessDto("Spicy/Alt/Sub"))
+        }
+
+        Files.move(media.resolve("Spicy/Alt"), media.resolve("Spicy/Neu"))
+
+        // Ohne expliziten Scan: die Ordneransicht merkt die Abweichung selbst.
+        val listing = client.folder(admin, "Spicy")
+        assertEquals(listOf("Neu"), listing.folders.map { it.name })
+        assertEquals(idA, items.idByAudioPath("Spicy/Neu/a.mp3"))
+        assertEquals(idB, items.idByAudioPath("Spicy/Neu/Sub/b.mp3"))
+        assertTrue(client.get("/api/items/$idA") { bearerAuth(admin) }.body<ItemDto>().isFavorite)
+
+        // Die Sperre ist mitgewandert: Alice sieht b weiterhin nicht.
+        assertEquals(listOf("Spicy/Neu/Sub"), runBlocking { folderAccess.rules() }.map { it.path })
+        val aliceToken = client.login("alice")
+        assertEquals(HttpStatusCode.NotFound, client.get("/api/items/$idB") { bearerAuth(aliceToken) }.status)
+    }
+
+    @Test
     fun `creator links und profilbild als cover-fallback`() = api { client ->
         file("Gibi ASMR/no_cover.mp3")
         users.create("admin", "geheimes-passwort", isAdmin = true)
@@ -264,5 +296,13 @@ class LibraryApiTest {
         assertEquals(HttpStatusCode.OK, client.get("/api/items/$id/cover") { bearerAuth(admin) }.status)
         // Der gleichnamige Ordner bekommt das Profilbild ebenfalls als Kachel.
         assertTrue(client.folder(admin).folders.single().hasCover)
+    }
+}
+
+class RenameTest {
+    @Test
+    fun `gemeinsames ende wird abgeschnitten`() {
+        assertEquals("A/Alt" to "A/Neu", de.axelcypher.asmr.server.library.renamedPrefix("A/Alt/x/t.mp3", "A/Neu/x/t.mp3"))
+        assertEquals("" to "B", de.axelcypher.asmr.server.library.renamedPrefix("t.mp3", "B/t.mp3"))
     }
 }

@@ -44,6 +44,8 @@ fun Route.libraryRoutes(services: Services) {
             val path = cleanFolder(call.request.queryParameters["path"].orEmpty())
             if (viewer.hiddenFolders.any { path == it || path.startsWith("$it/") }) notFound()
 
+            // Auf dem NAS umbenannt oder verschoben? Dann vor der Antwort neu einlesen.
+            if (services.scanner.isStale(path)) services.scanner.scan()
             val all = services.items.inFolder(viewer, path)
             val counts = all.filter { it.folder != path }.groupingBy { childName(path, it.folder) }.eachCount()
             // Admins sehen auch leere Ordner, damit sie Tracks hineinschieben können.
