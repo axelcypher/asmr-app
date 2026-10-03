@@ -23,8 +23,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -42,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalView
@@ -55,6 +57,7 @@ import androidx.media3.common.Player
 import coil3.compose.AsyncImage
 import de.axelcypher.asmr.data.api.AsmrClient
 import de.axelcypher.asmr.playback.PlaybackEngine
+import de.axelcypher.asmr.ui.AppIcons
 import de.axelcypher.asmr.ui.formatDuration
 import kotlinx.coroutines.delay
 
@@ -90,9 +93,7 @@ fun PlayerScreen(engine: PlaybackEngine, serverUrl: String, onClose: () -> Unit)
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onClose) { Text("↓ Bibliothek") }
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = { blackScreen = true }) { Text("Schwarz") }
+            IconButton(onClick = onClose) { Icon(AppIcons.ArrowDown, contentDescription = "Zur Bibliothek") }
         }
 
         Box(
@@ -126,32 +127,48 @@ fun PlayerScreen(engine: PlaybackEngine, serverUrl: String, onClose: () -> Unit)
 
         SeekBar(position, duration, onSeek = engine::seekTo)
 
+        // Hauptsteuerung, symmetrisch um Play/Pause.
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = engine::previous) { Icon(AppIcons.SkipPrevious, "Vorheriger Titel") }
+            SeekStepButton(AppIcons.Replay, "15 Sekunden zurück", onClick = engine::seekBack)
+            FilledIconButton(onClick = engine::togglePlay, modifier = Modifier.size(72.dp)) {
+                Icon(
+                    if (player.isPlaying) AppIcons.Pause else AppIcons.Play,
+                    contentDescription = if (player.isPlaying) "Pause" else "Abspielen",
+                    modifier = Modifier.size(40.dp),
+                )
+            }
+            SeekStepButton(AppIcons.Forward, "15 Sekunden vor", onClick = engine::seekForward)
+            IconButton(onClick = engine::next) { Icon(AppIcons.SkipNext, "Nächster Titel") }
+        }
+
+        // Modi in eigener Zeile, jeweils Icon mit Beschriftung.
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically,
         ) {
-            ControlText(if (player.shuffle) "Shuffle an" else "Shuffle", active = player.shuffle, onClick = engine::toggleShuffle)
-            ControlText("⏮", onClick = engine::previous)
-            ControlText("-15", onClick = engine::seekBack)
-            FilledIconButton(onClick = engine::togglePlay, modifier = Modifier.size(64.dp)) {
-                Text(if (player.isPlaying) "⏸" else "▶", fontSize = 26.sp)
-            }
-            ControlText("+15", onClick = engine::seekForward)
-            ControlText("⏭", onClick = engine::next)
-            ControlText(
-                when (player.repeatMode) {
-                    Player.REPEAT_MODE_ONE -> "Loop 1"
-                    Player.REPEAT_MODE_ALL -> "Loop alle"
+            ModeButton(AppIcons.Shuffle, "Shuffle", active = player.shuffle, onClick = engine::toggleShuffle)
+            ModeButton(
+                icon = if (player.repeatMode == Player.REPEAT_MODE_ONE) AppIcons.RepeatOne else AppIcons.Repeat,
+                label = when (player.repeatMode) {
+                    Player.REPEAT_MODE_ONE -> "Loop: Titel"
+                    Player.REPEAT_MODE_ALL -> "Loop: Alle"
                     else -> "Loop"
                 },
                 active = player.repeatMode != Player.REPEAT_MODE_OFF,
                 onClick = engine::cycleRepeatMode,
             )
-        }
-
-        OutlinedButton(onClick = { showTimerSheet = true }, modifier = Modifier.fillMaxWidth()) {
-            Text(timer?.let { sleepLabel(it.endsAt, it.isFading) } ?: "Sleep-Timer")
+            ModeButton(
+                AppIcons.Timer,
+                label = timer?.let { sleepLabel(it.endsAt, it.isFading).removePrefix("Stopp in ") } ?: "Timer",
+                active = timer != null,
+                onClick = { showTimerSheet = true },
+            )
+            ModeButton(AppIcons.Bedtime, "Schwarz", active = false, onClick = { blackScreen = true })
         }
 
         AmbientCard(engine, ambient)
@@ -188,14 +205,30 @@ private fun SeekBar(position: Long, duration: Long, onSeek: (Long) -> Unit) {
     }
 }
 
+/** Kreis-Pfeil mit "15" in der Mitte, wie in gängigen Podcast-Playern. */
 @Composable
-private fun ControlText(label: String, active: Boolean = false, onClick: () -> Unit) {
-    TextButton(onClick = onClick) {
-        Text(
-            label,
-            fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
-            color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+private fun SeekStepButton(icon: ImageVector, description: String, onClick: () -> Unit) {
+    IconButton(onClick = onClick, modifier = Modifier.size(56.dp)) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = description, modifier = Modifier.size(36.dp))
+            Text("15", fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 3.dp))
+        }
+    }
+}
+
+@Composable
+private fun ModeButton(icon: ImageVector, label: String, active: Boolean, onClick: () -> Unit) {
+    val color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    Column(
+        Modifier
+            .widthIn(min = 72.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 6.dp, horizontal = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(icon, contentDescription = null, tint = color)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = color, maxLines = 1)
     }
 }
 
@@ -285,8 +318,11 @@ fun MiniPlayer(engine: PlaybackEngine, onOpen: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        TextButton(onClick = engine::togglePlay) {
-            Text(if (player.isPlaying) "⏸" else "▶", fontSize = 22.sp)
+        IconButton(onClick = engine::togglePlay) {
+            Icon(
+                if (player.isPlaying) AppIcons.Pause else AppIcons.Play,
+                contentDescription = if (player.isPlaying) "Pause" else "Abspielen",
+            )
         }
     }
 }

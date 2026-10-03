@@ -16,6 +16,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -39,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.axelcypher.asmr.BuildConfig
 import de.axelcypher.asmr.api.UserDto
+import de.axelcypher.asmr.ui.AppIcons
 
 private const val MIN_PASSWORD_LENGTH = 10
 
@@ -54,7 +57,7 @@ fun ProfileScreen(viewModel: ProfileViewModel, onClose: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = { Text("Profil") },
-                navigationIcon = { TextButton(onClick = onClose) { Text("←") } },
+                navigationIcon = { IconButton(onClick = onClose) { Icon(AppIcons.ArrowBack, contentDescription = "Zurück") } },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },

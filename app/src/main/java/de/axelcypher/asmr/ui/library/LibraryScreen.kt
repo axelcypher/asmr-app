@@ -26,6 +26,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -55,6 +57,7 @@ import de.axelcypher.asmr.api.ItemDto
 import de.axelcypher.asmr.data.api.AsmrClient
 import de.axelcypher.asmr.data.settings.UpdateChannel
 import de.axelcypher.asmr.playback.PlaybackEngine
+import de.axelcypher.asmr.ui.AppIcons
 import de.axelcypher.asmr.ui.formatDuration
 import de.axelcypher.asmr.ui.imports.ImportDialog
 import de.axelcypher.asmr.ui.imports.ImportsSheet
@@ -119,7 +122,7 @@ fun LibraryScreen(
                 actions = {
                     TextButton(onClick = { showImport = true }) { Text("+ Import") }
                     Box {
-                        TextButton(onClick = { menuOpen = true }) { Text("⋮") }
+                        IconButton(onClick = { menuOpen = true }) { Icon(AppIcons.MoreVert, contentDescription = "Menü") }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(
                                 text = { Text("Importe" + if (state.runningImports > 0) " (${state.runningImports} laufen)" else "") },
