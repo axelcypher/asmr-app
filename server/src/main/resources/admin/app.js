@@ -448,11 +448,25 @@ function levelMatrix(levels) {
         value.className = v === 0 ? 'zero' : '';
       },
     });
-    return [h('span', { class: (levels[key] || 0) === 0 ? 'muted' : '' }, name), range, value];
+    return h('div', { class: 'mrow', 'data-key': key }, h('span', { class: (levels[key] || 0) === 0 ? 'muted' : '' }, name), range, value);
+  };
+  // Je Gruppe eingeklappt: dann nur die gesetzten Regler; aufgeklappt alle.
+  const group = (title, triggers) => {
+    let open = false;
+    const grid = h('div', { class: 'matrix' }, triggers.map(rows));
+    const toggle = h('button', { class: 'group-toggle' });
+    const render = () => {
+      const set = [...grid.children].filter((row) => (levels[row.dataset.key] || 0) > 0).length;
+      toggle.textContent = `${open ? '▾' : '▸'} ${title}${set ? ` (${set})` : ''}`;
+      for (const row of grid.children) row.classList.toggle('off', !open && !((levels[row.dataset.key] || 0) > 0));
+    };
+    toggle.addEventListener('click', () => { open = !open; render(); });
+    render();
+    return h('div', {}, toggle, grid);
   };
   const box = h('div', { class: 'stack' },
-    state.catalog.triggers.map((g) => h('div', {}, h('div', { class: 'muted small' }, g.name), h('div', { class: 'matrix' }, g.triggers.map(rows)))),
-    custom.length > 0 && h('div', {}, h('div', { class: 'muted small' }, 'Eigene'), h('div', { class: 'matrix' }, custom.map(rows))));
+    state.catalog.triggers.map((g) => group(g.name, g.triggers)),
+    custom.length > 0 && group('Eigene', custom));
   const input = h('input', { type: 'text', placeholder: 'Eigener Trigger', class: 'grow' });
   box.append(h('div', { class: 'row' }, input, h('button', {
     onclick: () => {

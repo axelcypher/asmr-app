@@ -78,6 +78,10 @@ img.avatar { width: 96px; height: 96px; object-fit: cover; border-radius: 50%; b
 .matrix { display: grid; grid-template-columns: 130px 1fr 28px; gap: 4px 10px; align-items: center; }
 .matrix input[type=range] { width: 100%; accent-color: var(--primary); }
 .matrix .zero { color: var(--muted); }
+.matrix .mrow { display: contents; }
+.matrix .mrow.off { display: none; }
+.group-toggle { background: none; border: none; padding: 2px 0; color: var(--muted); font-size: 13px; cursor: pointer; text-align: left; }
+.group-toggle:hover { color: var(--text); }
 
 .tree { list-style: none; padding-left: 14px; margin: 0; }
 .tree > li { margin: 2px 0; }
