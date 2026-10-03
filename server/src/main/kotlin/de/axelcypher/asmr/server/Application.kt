@@ -7,6 +7,7 @@ import de.axelcypher.asmr.server.db.AmbientFolderStore
 import de.axelcypher.asmr.server.db.CategoryStore
 import de.axelcypher.asmr.server.db.CreatorStore
 import de.axelcypher.asmr.server.db.PlaylistStore
+import de.axelcypher.asmr.server.db.TriggerCatalogStore
 import de.axelcypher.asmr.server.db.FolderAccessStore
 import de.axelcypher.asmr.server.db.ImportStore
 import de.axelcypher.asmr.server.db.ItemStore
@@ -19,6 +20,7 @@ import de.axelcypher.asmr.server.routes.authRoutes
 import de.axelcypher.asmr.server.routes.importRoutes
 import de.axelcypher.asmr.server.routes.itemRoutes
 import de.axelcypher.asmr.server.routes.homeRoutes
+import de.axelcypher.asmr.server.routes.triggerRoutes
 import de.axelcypher.asmr.server.routes.libraryRoutes
 import de.axelcypher.asmr.server.routes.userRoutes
 import io.ktor.http.HttpStatusCode
@@ -63,6 +65,7 @@ class Services(
     val categories: CategoryStore,
     val ambientFolders: AmbientFolderStore,
     val playlists: PlaylistStore,
+    val triggers: TriggerCatalogStore,
     val creators: CreatorStore,
     val worker: ImportWorker,
     val sso: SsoService?,
@@ -163,6 +166,7 @@ fun Application.asmrModule(services: Services) {
                 itemRoutes(services)
                 libraryRoutes(services)
                 homeRoutes(services)
+                triggerRoutes(services)
                 importRoutes(services)
             }
         }

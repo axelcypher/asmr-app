@@ -71,6 +71,8 @@ data class LibraryUiState(
     val isSearching: Boolean = false,
     /** Trigger mit Anzahl für die Filterauswahl. */
     val availableTags: List<TagDto> = emptyList(),
+    /** Bewertungsmatrix vom Server (Gruppe -> Regler); bis zum Laden der eingebaute Katalog. */
+    val triggerCatalog: List<Pair<String, List<String>>> = de.axelcypher.asmr.api.TRIGGER_CATALOG,
 ) {
     val runningImports get() = imports.count { it.status == ImportStatus.QUEUED || it.status == ImportStatus.RUNNING }
     val breadcrumbs: List<String> get() = if (path.isEmpty()) emptyList() else path.split('/')
@@ -186,6 +188,9 @@ class LibraryViewModel(
     fun loadHome() = action(null) {
         val home = client.home()
         _state.update { it.copy(home = home, playlists = home.playlists, categories = home.categories) }
+        runCatching { client.catalog() }.getOrNull()?.let { catalog ->
+            _state.update { it.copy(triggerCatalog = catalog.triggers.map { group -> group.name to group.triggers }) }
+        }
     }
 
     fun openDetail(detail: Detail) {

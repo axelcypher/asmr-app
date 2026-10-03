@@ -32,7 +32,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import de.axelcypher.asmr.api.ALL_TRIGGERS
 import de.axelcypher.asmr.api.ItemDto
 import de.axelcypher.asmr.api.MAX_TRIGGER_LEVEL
 import de.axelcypher.asmr.api.TRIGGER_CATALOG
@@ -43,13 +42,19 @@ import kotlin.math.roundToInt
 /** Vollbild-Editor für Titel, Creator und die Bewertungsmatrix eines Tracks. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ItemEditor(item: ItemDto, onSave: (UpdateItemRequest) -> Unit, onDismiss: () -> Unit) {
+fun ItemEditor(
+    item: ItemDto,
+    /** Gruppen mit Reglern; kommt vom Server, offline der eingebaute Katalog. */
+    catalog: List<Pair<String, List<String>>> = TRIGGER_CATALOG,
+    onSave: (UpdateItemRequest) -> Unit,
+    onDismiss: () -> Unit,
+) {
     var title by remember { mutableStateOf(item.title) }
     var creator by remember { mutableStateOf(item.creator.orEmpty()) }
     val levels = remember { mutableStateMapOf<String, Int>().apply { putAll(item.levels) } }
     var newTrigger by remember { mutableStateOf("") }
     // Eigene Trigger, die nicht im Katalog stehen, bekommen eine eigene Gruppe.
-    val custom = levels.keys.filter { key -> ALL_TRIGGERS.none { it.equals(key, ignoreCase = true) } }.sorted()
+    val custom = levels.keys.filter { key -> catalog.flatMap { it.second }.none { it.equals(key, ignoreCase = true) } }.sorted()
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize()) {
@@ -101,7 +106,7 @@ fun ItemEditor(item: ItemDto, onSave: (UpdateItemRequest) -> Unit, onDismiss: ()
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    TRIGGER_CATALOG.forEach { (group, triggers) ->
+                    catalog.forEach { (group, triggers) ->
                         item(key = "group-$group") { GroupHeader(group) }
                         items(triggers, key = { it }) { trigger ->
                             LevelRow(trigger, levelOf(levels, trigger)) { setLevel(levels, trigger, it) }

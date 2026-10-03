@@ -215,6 +215,8 @@ class AsmrClient(engine: HttpClientEngine, private val sessionStore: SessionStor
 
     suspend fun home(): de.axelcypher.asmr.api.HomeDto = httpClient.get("${base()}/api/home").body()
 
+    suspend fun catalog(): de.axelcypher.asmr.api.CatalogDto = httpClient.get("${base()}/api/catalog").body()
+
     /** Gefilterte Trackliste, z.B. `favorites=true`, `ambient=true`, `creator=…`, `category=…`. */
     suspend fun itemsWhere(vararg filters: Pair<String, String>): List<ItemDto> =
         httpClient.get("${base()}/api/items") {

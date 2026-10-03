@@ -58,7 +58,7 @@ fun Route.homeRoutes(services: Services) {
     get("/catalog") {
         call.respond(
             CatalogDto(
-                triggers = de.axelcypher.asmr.api.TRIGGER_CATALOG.map { (group, triggers) -> TriggerGroupDto(group, triggers) },
+                triggers = services.triggers.catalog(),
                 categoryIcons = CATEGORY_ICONS,
                 categoryColors = de.axelcypher.asmr.api.CATEGORY_COLORS,
             ),

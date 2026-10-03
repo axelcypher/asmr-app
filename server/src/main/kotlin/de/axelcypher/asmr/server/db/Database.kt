@@ -169,6 +169,20 @@ class Database private constructor(private val connection: Connection) {
             ALTER TABLE creators ADD COLUMN is_creator INTEGER NOT NULL DEFAULT 0;
             UPDATE creators SET is_creator = 1 WHERE avatar_path IS NOT NULL OR links <> '[]'
             """,
+            """
+            CREATE TABLE trigger_groups (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                position INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE triggers (
+                id INTEGER PRIMARY KEY,
+                group_id INTEGER NOT NULL REFERENCES trigger_groups(id) ON DELETE CASCADE,
+                name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                position INTEGER NOT NULL DEFAULT 0
+            )
+            """,
+            seedTriggerCatalog(),
         )
     }
 }
@@ -201,3 +215,14 @@ private fun PreparedStatement.bind(args: Array<out Any?>): PreparedStatement {
 
 fun ResultSet.getLongOrNull(column: String): Long? = getLong(column).takeUnless { wasNull() }
 fun ResultSet.getDoubleOrNull(column: String): Double? = getDouble(column).takeUnless { wasNull() }
+
+/** Übernimmt den bisher fest eingebauten Trigger-Katalog in die Datenbank (einmalig, per Migration). */
+private fun seedTriggerCatalog(): String = buildString {
+    fun quote(value: String) = "'" + value.replace("'", "''") + "'"
+    de.axelcypher.asmr.api.TRIGGER_CATALOG.forEachIndexed { groupIndex, (group, triggers) ->
+        append("INSERT INTO trigger_groups (id, name, position) VALUES (${groupIndex + 1}, ${quote(group)}, $groupIndex);\n")
+        triggers.forEachIndexed { index, trigger ->
+            append("INSERT INTO triggers (group_id, name, position) VALUES (${groupIndex + 1}, ${quote(trigger)}, $index);\n")
+        }
+    }
+}

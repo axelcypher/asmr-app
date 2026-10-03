@@ -206,6 +206,7 @@ const PAGES = [
   ['tracks', 'Tracks', renderTracks],
   ['folders', 'Ordner', renderFolders],
   ['categories', 'Kategorien', renderCategories],
+  ['matrix', 'Bewertungsmatrix', renderMatrix],
   ['creators', 'Creator', renderCreators],
   ['users', 'Benutzer', renderUsers],
   ['imports', 'Importe', renderImports],
@@ -655,6 +656,92 @@ function categoryForm(panel, category, after) {
         onclick: async () => { if (confirm(`Kategorie "${category.name}" löschen? Tracks bleiben erhalten.`) && await run(() => api(`/categories/${category.id}`, { method: 'DELETE' }), 'Gelöscht') !== undefined) after(); },
       }, 'Löschen')),
   ));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Bewertungsmatrix: Gruppen und Regler verwalten
+
+async function renderMatrix(el) {
+  const groups = await api('/admin/triggers');
+  const reload = async () => {
+    state.catalog = await api('/catalog');
+    await renderMatrix(el);
+  };
+  const act = async (action, success) => { if (await run(action, success) !== undefined) await reload(); };
+  const swap = (list, index, delta) => {
+    const ids = list.map((x) => x.id);
+    const target = index + delta;
+    if (target < 0 || target >= ids.length) return null;
+    [ids[index], ids[target]] = [ids[target], ids[index]];
+    return ids;
+  };
+
+  const newGroup = h('input', { type: 'text', placeholder: 'Neue Gruppe, z.B. "Rollenspiel"', class: 'grow' });
+  const addGroup = (e) => {
+    e.preventDefault();
+    if (!newGroup.value.trim()) return;
+    act(() => api('/admin/triggers/groups', { method: 'POST', body: { name: newGroup.value.trim() } }), 'Gruppe angelegt');
+  };
+
+  const groupCard = (group, groupIndex) => {
+    const newTrigger = h('input', { type: 'text', placeholder: 'Neuer Regler', class: 'grow' });
+    const addTrigger = (e) => {
+      e.preventDefault();
+      if (!newTrigger.value.trim()) return;
+      act(() => api('/admin/triggers', { method: 'POST', body: { name: newTrigger.value.trim(), groupId: group.id } }), 'Regler angelegt');
+    };
+    return h('div', { class: 'card stack' },
+      h('div', { class: 'row' },
+        h('h2', { class: 'grow', style: { margin: 0 } }, group.name),
+        h('button', { title: 'Nach oben', disabled: groupIndex === 0, onclick: () => { const ids = swap(groups, groupIndex, -1); if (ids) act(() => api('/admin/triggers/groups/order', { method: 'PUT', body: { ids } })); } }, '▲'),
+        h('button', { title: 'Nach unten', disabled: groupIndex === groups.length - 1, onclick: () => { const ids = swap(groups, groupIndex, 1); if (ids) act(() => api('/admin/triggers/groups/order', { method: 'PUT', body: { ids } })); } }, '▼'),
+        h('button', {
+          onclick: () => {
+            const name = prompt('Gruppe umbenennen:', group.name);
+            if (name && name.trim() && name.trim() !== group.name) act(() => api(`/admin/triggers/groups/${group.id}`, { method: 'PATCH', body: { name: name.trim() } }), 'Umbenannt');
+          },
+        }, 'Umbenennen'),
+        h('button', {
+          class: 'danger',
+          onclick: () => {
+            if (confirm(`Gruppe "${group.name}" mit ${group.triggers.length} Reglern löschen? Werte an den Tracks bleiben als eigene Trigger erhalten.`)) {
+              act(() => api(`/admin/triggers/groups/${group.id}`, { method: 'DELETE' }), 'Gruppe gelöscht');
+            }
+          },
+        }, 'Löschen')),
+      group.triggers.length === 0 && h('p', { class: 'muted small' }, 'Noch keine Regler.'),
+      h('table', {}, h('tbody', {}, group.triggers.map((t, index) => h('tr', {},
+        h('td', {}, t.name),
+        h('td', { class: 'muted small' }, t.usage === 1 ? '1 Track' : `${t.usage} Tracks`),
+        h('td', {}, h('div', { class: 'row', style: { gap: '4px', justifyContent: 'flex-end' } },
+          h('button', { title: 'Nach oben', disabled: index === 0, onclick: () => { const ids = swap(group.triggers, index, -1); if (ids) act(() => api('/admin/triggers/order', { method: 'PUT', body: { ids } })); } }, '▲'),
+          h('button', { title: 'Nach unten', disabled: index === group.triggers.length - 1, onclick: () => { const ids = swap(group.triggers, index, 1); if (ids) act(() => api('/admin/triggers/order', { method: 'PUT', body: { ids } })); } }, '▼'),
+          h('select', {
+            title: 'In andere Gruppe verschieben',
+            onchange: (e) => act(() => api(`/admin/triggers/${t.id}`, { method: 'PATCH', body: { groupId: Number(e.target.value) } }), 'Verschoben'),
+          }, groups.map((g) => h('option', { value: g.id, selected: g.id === group.id }, g.name))),
+          h('button', {
+            onclick: () => {
+              const name = prompt(`"${t.name}" umbenennen (wird in allen ${t.usage} Tracks übernommen):`, t.name);
+              if (name && name.trim() && name.trim() !== t.name) act(() => api(`/admin/triggers/${t.id}`, { method: 'PATCH', body: { name: name.trim() } }), 'Umbenannt');
+            },
+          }, 'Umbenennen'),
+          h('button', {
+            class: 'danger',
+            onclick: () => {
+              if (!confirm(`Regler "${t.name}" löschen?`)) return;
+              const purge = t.usage > 0 && confirm(`Den Wert auch aus den ${t.usage} Tracks entfernen?\nOK = entfernen, Abbrechen = an den Tracks als eigenen Trigger behalten.`);
+              act(() => api(`/admin/triggers/${t.id}${purge ? '?purge=true' : ''}`, { method: 'DELETE' }), 'Gelöscht');
+            },
+          }, 'Löschen'))))))),
+      h('form', { class: 'row', onsubmit: addTrigger }, newTrigger, h('button', { type: 'submit' }, 'Regler anlegen')));
+  };
+
+  clear(el,
+    h('h1', {}, 'Bewertungsmatrix'),
+    h('p', { class: 'muted' }, 'Gruppen und Regler, wie sie im Track-Editor (App und Web) erscheinen. Umbenennen übernimmt die Werte in alle Tracks und deren Metadaten-Dateien.'),
+    h('form', { class: 'row', style: { marginBottom: '16px' }, onsubmit: addGroup }, newGroup, h('button', { class: 'primary', type: 'submit' }, 'Gruppe anlegen')),
+    h('div', { class: 'stack' }, groups.map(groupCard)));
 }
 
 // ---------------------------------------------------------------------------------------------

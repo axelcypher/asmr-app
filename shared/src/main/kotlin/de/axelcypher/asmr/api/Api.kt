@@ -235,3 +235,18 @@ data class CatalogDto(val triggers: List<TriggerGroupDto>, val categoryIcons: Li
 
 @Serializable
 data class OrderRequest(val ids: List<Long>)
+
+// --- Bewertungsmatrix verwalten (Admin) ---------------------------------------------------------
+
+@Serializable
+data class TriggerEntryDto(val id: Long, val name: String, val groupId: Long, val usage: Int)
+
+@Serializable
+data class TriggerGroupAdminDto(val id: Long, val name: String, val triggers: List<TriggerEntryDto>)
+
+@Serializable
+data class NameRequest(val name: String)
+
+/** Regler anlegen oder ändern; [groupId] verschiebt in eine andere Gruppe. */
+@Serializable
+data class TriggerRequest(val name: String? = null, val groupId: Long? = null)

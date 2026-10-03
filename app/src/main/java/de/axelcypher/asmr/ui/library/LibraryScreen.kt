@@ -430,7 +430,7 @@ private fun LibraryDialogs(
             viewModel.createPlaylist(it)
             onClose()
         }, onDismiss = onClose)
-        is LibraryDialog.Edit -> ItemEditor(dialog.item, onSave = { request ->
+        is LibraryDialog.Edit -> ItemEditor(dialog.item, state.triggerCatalog, onSave = { request ->
             viewModel.saveItem(dialog.item.id, request)
             onClose()
         }, onDismiss = onClose)

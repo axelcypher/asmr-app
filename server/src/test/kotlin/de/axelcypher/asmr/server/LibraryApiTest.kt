@@ -15,6 +15,7 @@ import de.axelcypher.asmr.server.db.AmbientFolderStore
 import de.axelcypher.asmr.server.db.CategoryStore
 import de.axelcypher.asmr.server.db.CreatorStore
 import de.axelcypher.asmr.server.db.PlaylistStore
+import de.axelcypher.asmr.server.db.TriggerCatalogStore
 import de.axelcypher.asmr.server.db.Database
 import de.axelcypher.asmr.server.db.FolderAccessStore
 import de.axelcypher.asmr.server.db.ImportStore
@@ -106,6 +107,7 @@ class LibraryApiTest {
             categories = categories,
             ambientFolders = ambientFolders,
             playlists = playlists,
+            triggers = TriggerCatalogStore(db),
             creators = creators,
             worker = ImportWorker(imports, items, Downloader { _, _ -> error("kein Download") }, root.resolve("tmp"), media, lock),
             sso = null,
@@ -415,6 +417,63 @@ class LibraryApiTest {
             setBody(de.axelcypher.asmr.api.OrderRequest(listOf(second.id, first.id)))
         }
         assertEquals(listOf("Zwei", "Eins"), runBlocking { categories.list() }.map { it.name })
+    }
+
+    @Test
+    fun `bewertungsmatrix verwalten`() = api { client ->
+        val audio = file("tapping.mp3")
+        users.create("admin", "geheimes-passwort", isAdmin = true)
+        scanner.scan()
+        val id = items.idByAudioPath("tapping.mp3")!!
+        val admin = client.login("admin")
+        client.patch("/api/items/$id") {
+            bearerAuth(admin)
+            contentType(ContentType.Application.Json)
+            setBody(UpdateItemRequest(levels = mapOf("Tapping" to 7, "Kisses" to 3)))
+        }
+
+        // Der eingebaute Katalog ist übernommen.
+        val catalog = client.get("/api/catalog") { bearerAuth(admin) }.body<de.axelcypher.asmr.api.CatalogDto>()
+        assertEquals(de.axelcypher.asmr.api.TRIGGER_CATALOG.map { it.first }, catalog.triggers.map { it.name })
+
+        // Neue Gruppe mit neuem Regler.
+        client.post("/api/admin/triggers/groups") {
+            bearerAuth(admin)
+            contentType(ContentType.Application.Json)
+            setBody(de.axelcypher.asmr.api.NameRequest("Rollenspiel"))
+        }
+        var groups = client.get("/api/admin/triggers") { bearerAuth(admin) }.body<List<de.axelcypher.asmr.api.TriggerGroupAdminDto>>()
+        val roleplay = groups.last()
+        assertEquals("Rollenspiel", roleplay.name)
+        client.post("/api/admin/triggers") {
+            bearerAuth(admin)
+            contentType(ContentType.Application.Json)
+            setBody(de.axelcypher.asmr.api.TriggerRequest(name = "Doctor RP", groupId = roleplay.id))
+        }
+        val duplicate = client.post("/api/admin/triggers") {
+            bearerAuth(admin)
+            contentType(ContentType.Application.Json)
+            setBody(de.axelcypher.asmr.api.TriggerRequest(name = "doctor rp", groupId = roleplay.id))
+        }
+        assertEquals(HttpStatusCode.Conflict, duplicate.status)
+
+        // Umbenennen zieht Werte in Track und Metadaten-Datei nach.
+        groups = client.get("/api/admin/triggers") { bearerAuth(admin) }.body()
+        val tapping = groups.flatMap { it.triggers }.single { it.name == "Tapping" }
+        assertEquals(1, tapping.usage)
+        client.patch("/api/admin/triggers/${tapping.id}") {
+            bearerAuth(admin)
+            contentType(ContentType.Application.Json)
+            setBody(de.axelcypher.asmr.api.TriggerRequest(name = "Fingertapping"))
+        }
+        assertEquals(mapOf("Fingertapping" to 7, "Kisses" to 3), client.get("/api/items/$id") { bearerAuth(admin) }.body<ItemDto>().levels)
+        assertTrue("Fingertapping" in Sidecars.pathFor(audio).readText())
+
+        // Löschen mit purge entfernt den Wert aus den Tracks.
+        val kisses = groups.flatMap { it.triggers }.single { it.name == "Kisses" }
+        client.delete("/api/admin/triggers/${kisses.id}?purge=true") { bearerAuth(admin) }
+        assertEquals(mapOf("Fingertapping" to 7), client.get("/api/items/$id") { bearerAuth(admin) }.body<ItemDto>().levels)
+        assertFalse("Kisses" in Sidecars.pathFor(audio).readText())
     }
 
     @Test

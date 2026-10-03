@@ -185,6 +185,29 @@ class ItemStore(private val db: Database, private val now: () -> Long = System::
         update("UPDATE items SET audio_path = ?, cover_path = ? WHERE id = ?", audioPath, coverPath, id)
     }
 
+    /**
+     * Benennt einen Trigger in allen Tracks um (Groß/klein egal) und liefert die betroffenen IDs,
+     * damit der Aufrufer die Metadaten-Dateien neu schreiben kann. Hat ein Track beide Namen,
+     * gewinnt der höhere Wert.
+     */
+    suspend fun renameTag(old: String, new: String): List<Long> = db.tx {
+        val affected = query("SELECT item_id, level FROM item_tags WHERE tag = ?", old) { it.getLong(1) to it.getInt(2) }
+        affected.forEach { (itemId, level) ->
+            val existing = queryOne("SELECT level FROM item_tags WHERE item_id = ? AND tag = ? AND tag <> ?", itemId, new, old) { it.getInt(1) }
+            update("DELETE FROM item_tags WHERE item_id = ? AND tag = ?", itemId, old)
+            update("DELETE FROM item_tags WHERE item_id = ? AND tag = ?", itemId, new)
+            update("INSERT INTO item_tags (item_id, tag, level) VALUES (?, ?, ?)", itemId, new, maxOf(level, existing ?: 0))
+        }
+        affected.map { it.first }
+    }
+
+    /** Entfernt einen Trigger aus allen Tracks; liefert die betroffenen IDs. */
+    suspend fun removeTag(name: String): List<Long> = db.tx {
+        val affected = query("SELECT item_id FROM item_tags WHERE tag = ?", name) { it.getLong(1) }
+        update("DELETE FROM item_tags WHERE tag = ?", name)
+        affected
+    }
+
     suspend fun setAmbient(id: Long, ambient: Boolean) =
         db.tx { update("UPDATE items SET is_ambient = ? WHERE id = ?", ambient, id) }
 

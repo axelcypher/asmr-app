@@ -18,6 +18,7 @@ import de.axelcypher.asmr.server.db.AmbientFolderStore
 import de.axelcypher.asmr.server.db.CategoryStore
 import de.axelcypher.asmr.server.db.CreatorStore
 import de.axelcypher.asmr.server.db.PlaylistStore
+import de.axelcypher.asmr.server.db.TriggerCatalogStore
 import de.axelcypher.asmr.server.db.Database
 import de.axelcypher.asmr.server.db.FolderAccessStore
 import de.axelcypher.asmr.server.db.ImportStore
@@ -118,6 +119,7 @@ class ServerTest {
             categories = categories,
             ambientFolders = ambientFolders,
             playlists = playlists,
+            triggers = TriggerCatalogStore(db),
             creators = creators,
             worker = worker,
             sso = sso,

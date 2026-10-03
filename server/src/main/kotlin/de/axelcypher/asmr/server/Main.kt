@@ -8,6 +8,7 @@ import de.axelcypher.asmr.server.db.AmbientFolderStore
 import de.axelcypher.asmr.server.db.CategoryStore
 import de.axelcypher.asmr.server.db.CreatorStore
 import de.axelcypher.asmr.server.db.PlaylistStore
+import de.axelcypher.asmr.server.db.TriggerCatalogStore
 import de.axelcypher.asmr.server.db.Database
 import de.axelcypher.asmr.server.db.FolderAccessStore
 import de.axelcypher.asmr.server.db.ImportStore
@@ -81,6 +82,7 @@ fun main() {
         categories = categories,
         ambientFolders = ambientFolders,
         playlists = PlaylistStore(db),
+        triggers = TriggerCatalogStore(db),
         creators = CreatorStore(db),
         worker = worker,
         sso = sso,
