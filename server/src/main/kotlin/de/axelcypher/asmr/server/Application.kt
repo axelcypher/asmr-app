@@ -80,6 +80,11 @@ fun Application.asmrModule(services: Services) {
             call.respond(HttpStatusCode.BadRequest, ErrorDto(e.message ?: "Ungültige Anfrage"))
         }
         exception<Throwable> { call, e ->
+            // Der Player bricht Streams beim Spulen und Titelwechsel ab; das ist kein Serverfehler.
+            if (generateSequence(e) { it.cause }.any { it is java.io.IOException }) {
+                log.debug("Verbindung abgebrochen bei {}", call.request.path())
+                return@exception
+            }
             log.error("Unbehandelter Fehler bei {}", call.request.path(), e)
             call.respond(HttpStatusCode.InternalServerError, ErrorDto("Interner Fehler"))
         }
