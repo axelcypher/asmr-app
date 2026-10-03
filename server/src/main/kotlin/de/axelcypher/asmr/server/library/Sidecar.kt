@@ -21,6 +21,8 @@ data class SidecarMetadata(
     /** Bewertungsmatrix Trigger -> Stärke 1..10. */
     val levels: Map<String, Int>? = null,
     val sourceUrl: String? = null,
+    /** Als Ambiente markiert. */
+    val ambient: Boolean? = null,
 )
 
 object Sidecars {

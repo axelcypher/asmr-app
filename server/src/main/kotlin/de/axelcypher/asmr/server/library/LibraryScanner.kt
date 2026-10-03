@@ -1,7 +1,7 @@
 package de.axelcypher.asmr.server.library
 
 import de.axelcypher.asmr.server.auth.sha256Hex
-import de.axelcypher.asmr.server.db.FolderAccessStore
+import de.axelcypher.asmr.server.db.FolderPathOwner
 import de.axelcypher.asmr.server.db.ItemRecord
 import de.axelcypher.asmr.server.db.ItemStore
 import de.axelcypher.asmr.server.db.NewItem
@@ -50,8 +50,8 @@ class LibraryScanner(
     private val coverDir: Path,
     private val probe: MediaProbe,
     private val libraryLock: Mutex,
-    /** Zugriffsregeln wandern mit, wenn ein Ordner auf dem NAS umbenannt wird. */
-    private val folderAccess: FolderAccessStore? = null,
+    /** Speichern Ordnerpfade und wandern mit, wenn ein Ordner auf dem NAS umbenannt wird. */
+    private val folderOwners: List<FolderPathOwner> = emptyList(),
 ) {
     private val log = LoggerFactory.getLogger(LibraryScanner::class.java)
     private val running = Mutex()
@@ -131,28 +131,25 @@ class LibraryScanner(
             withContext(Dispatchers.IO) { items.setPaths(gone.single().first, relativePath(target), findCover(target)) }
             renames += gone.single().second to relativePath(target)
         }
-        if (renames.isNotEmpty()) folderAccess?.let { followRenamedRules(it, renames) }
+        if (renames.isNotEmpty()) followRenamedFolders(renames)
         renames.size
     }
 
     /**
      * Leitet aus verschobenen Tracks umbenannte Ordner ab (gemeinsames Ende der Pfade abschneiden:
-     * `A/Alt/x/t.mp3` -> `A/Neu/x/t.mp3` heißt `A/Alt` -> `A/Neu`) und zieht Zugriffsregeln nach.
-     * Nur eindeutige Zuordnungen, damit eine Sperre nie auf einem falschen Ordner landet.
+     * `A/Alt/x/t.mp3` -> `A/Neu/x/t.mp3` heißt `A/Alt` -> `A/Neu`) und zieht alles nach, was Ordnerpfade
+     * speichert (Zugriffsregeln, Kategorien, Ambiente). Nur eindeutige Zuordnungen, damit eine Sperre
+     * nie auf einem falschen Ordner landet.
      */
-    private suspend fun followRenamedRules(access: FolderAccessStore, moves: List<Pair<String, String>>) {
+    private suspend fun followRenamedFolders(moves: List<Pair<String, String>>) {
         val mapping = moves.map { (old, new) -> renamedPrefix(old, new) }
             .filter { (from, to) -> from.isNotEmpty() && to.isNotEmpty() }
             .groupBy({ it.first }, { it.second })
             .filterValues { it.distinct().size == 1 }
             .mapValues { it.value.first() }
-        for (rule in access.rules()) {
-            val (from, to) = mapping.entries.firstOrNull { rule.path == it.key || rule.path.startsWith("${it.key}/") }
-                ?: continue
-            val newPath = to + rule.path.removePrefix(from)
-            access.remove(rule.path)
-            access.set(rule.copy(path = newPath))
-            log.info("Zugriffsregel folgt umbenanntem Ordner: {} -> {}", rule.path, newPath)
+        for ((from, to) in mapping) {
+            folderOwners.forEach { it.renameFolder(from, to) }
+            log.info("Ordner umbenannt: {} -> {}", from, to)
         }
     }
 
@@ -270,6 +267,11 @@ class LibraryScanner(
                     items.updateMetadata(record.id, title, creator, levels)
                     changed = true
                 }
+                val ambient = sidecar.ambient ?: false
+                if (ambient != record.ambient) {
+                    items.setAmbient(record.id, ambient)
+                    changed = true
+                }
             }
             if (changed) updated++
         }
@@ -300,6 +302,7 @@ class LibraryScanner(
             coverPath = withContext(Dispatchers.IO) { findCover(file) },
             description = info?.comment,
             sourceUrl = sidecar?.sourceUrl,
+            ambient = sidecar?.ambient ?: false,
             sourceKey = null,
             levels = sidecar?.levels?.let(::normalizeLevels) ?: TriggerTags.detect(title, info?.comment, emptyList()),
         )
@@ -325,7 +328,8 @@ class LibraryScanner(
 
     private fun relativePath(file: Path) = file.relativeTo(mediaDir).toString().replace('\\', '/')
 
-    private fun ItemRecord.toSidecar() = SidecarMetadata(title, creator, levels.takeIf { it.isNotEmpty() }, sourceUrl)
+    private fun ItemRecord.toSidecar() =
+        SidecarMetadata(title, creator, levels.takeIf { it.isNotEmpty() }, sourceUrl, ambient.takeIf { it })
 
     companion object {
         /** Cover, die im Datenordner statt auf dem NAS liegen (erzeugte Video-Vorschauen). */

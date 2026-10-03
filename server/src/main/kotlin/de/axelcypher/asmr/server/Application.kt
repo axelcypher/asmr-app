@@ -3,7 +3,10 @@ package de.axelcypher.asmr.server
 import de.axelcypher.asmr.api.ApiJson
 import de.axelcypher.asmr.api.ErrorDto
 import de.axelcypher.asmr.server.auth.SsoService
+import de.axelcypher.asmr.server.db.AmbientFolderStore
+import de.axelcypher.asmr.server.db.CategoryStore
 import de.axelcypher.asmr.server.db.CreatorStore
+import de.axelcypher.asmr.server.db.PlaylistStore
 import de.axelcypher.asmr.server.db.FolderAccessStore
 import de.axelcypher.asmr.server.db.ImportStore
 import de.axelcypher.asmr.server.db.ItemStore
@@ -15,6 +18,7 @@ import de.axelcypher.asmr.server.library.LibraryScanner
 import de.axelcypher.asmr.server.routes.authRoutes
 import de.axelcypher.asmr.server.routes.importRoutes
 import de.axelcypher.asmr.server.routes.itemRoutes
+import de.axelcypher.asmr.server.routes.homeRoutes
 import de.axelcypher.asmr.server.routes.libraryRoutes
 import de.axelcypher.asmr.server.routes.userRoutes
 import io.ktor.http.HttpStatusCode
@@ -49,6 +53,9 @@ class Services(
     val items: ItemStore,
     val imports: ImportStore,
     val folderAccess: FolderAccessStore,
+    val categories: CategoryStore,
+    val ambientFolders: AmbientFolderStore,
+    val playlists: PlaylistStore,
     val creators: CreatorStore,
     val worker: ImportWorker,
     val sso: SsoService?,
@@ -138,6 +145,7 @@ fun Application.asmrModule(services: Services) {
                 userRoutes(services)
                 itemRoutes(services)
                 libraryRoutes(services)
+                homeRoutes(services)
                 importRoutes(services)
             }
         }

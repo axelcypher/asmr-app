@@ -20,6 +20,7 @@ data class NewItem(
     val sourceKey: String?,
     /** Bewertungsmatrix Trigger -> Stärke. */
     val levels: Map<String, Int>,
+    val ambient: Boolean = false,
 )
 
 data class ItemFiles(val audioPath: String, val coverPath: String?)
@@ -33,6 +34,7 @@ data class ItemRecord(
     val coverPath: String?,
     val levels: Map<String, Int>,
     val sourceUrl: String?,
+    val ambient: Boolean = false,
 )
 
 /**
@@ -48,6 +50,10 @@ data class ItemQuery(
     val tags: List<String> = emptyList(),
     val creator: String? = null,
     val favoritesOnly: Boolean = false,
+    /** Nur Tracks dieser Kategorie (direkt oder über einen zugeordneten Ordner). */
+    val category: CategoryMembers? = null,
+    /** Nur Ambiente: markierte Tracks oder Tracks in diesen Ordnern. */
+    val ambientFolders: List<String>? = null,
     val sort: ItemSort = ItemSort.TITLE,
     val page: Int = 0,
     val pageSize: Int = 60,
@@ -61,10 +67,10 @@ class ItemStore(private val db: Database, private val now: () -> Long = System::
     suspend fun add(item: NewItem): Long = db.tx {
         val id = insert(
             """INSERT INTO items (title, creator, duration_seconds, audio_path, cover_path, description,
-                                  source_url, source_key, added_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                  source_url, source_key, added_at, is_ambient)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             item.title, item.creator, item.durationSeconds, item.audioPath, item.coverPath, item.description,
-            item.sourceUrl, item.sourceKey, now(),
+            item.sourceUrl, item.sourceKey, now(), item.ambient,
         )
         setLevels(id, item.levels)
         id
@@ -123,6 +129,8 @@ class ItemStore(private val db: Database, private val now: () -> Long = System::
             args += it
         }
         if (q.favoritesOnly) where += "f.item_id IS NOT NULL"
+        q.category?.let { anyOf(where, args, it.itemIds, it.folders, extra = null) }
+        q.ambientFolders?.let { anyOf(where, args, emptySet(), it, extra = "i.is_ambient = 1") }
         hiddenClause(viewer, where, args)
         val whereSql = if (where.isEmpty()) "" else "WHERE " + where.joinToString(" AND ")
         val order = when (q.sort) {
@@ -164,6 +172,57 @@ class ItemStore(private val db: Database, private val now: () -> Long = System::
 
     suspend fun setPaths(id: Long, audioPath: String, coverPath: String?) = db.tx {
         update("UPDATE items SET audio_path = ?, cover_path = ? WHERE id = ?", audioPath, coverPath, id)
+    }
+
+    suspend fun setAmbient(id: Long, ambient: Boolean) =
+        db.tx { update("UPDATE items SET is_ambient = ? WHERE id = ?", ambient, id) }
+
+    /** Sichtbare Tracks in der Reihenfolge von [ids] (z.B. einer Playlist). */
+    suspend fun byIds(viewer: Viewer, ids: List<Long>): List<ItemDto> {
+        if (ids.isEmpty()) return emptyList()
+        val found = db.tx {
+            val where = mutableListOf("i.id IN (${ids.joinToString { "?" }})")
+            val args = ids.toMutableList<Any?>()
+            hiddenClause(viewer, where, args)
+            query("$SELECT_ITEM WHERE ${where.joinToString(" AND ")}", viewer.userId, *args.toTypedArray()) { it.toItem() }
+                .map { it.withTags(this) }
+        }.associateBy { it.id }
+        return ids.mapNotNull(found::get)
+    }
+
+    /** Creator der sichtbaren Tracks mit Anzahl, meiste zuerst. */
+    suspend fun creators(viewer: Viewer): List<de.axelcypher.asmr.api.CreatorSummaryDto> = db.tx {
+        val where = mutableListOf("i.creator IS NOT NULL")
+        val args = mutableListOf<Any?>()
+        hiddenClause(viewer, where, args)
+        query(
+            """SELECT i.creator, COUNT(*) AS n, MAX(c.avatar_path) AS avatar FROM items i $CREATOR_JOIN
+               WHERE ${where.joinToString(" AND ")} GROUP BY i.creator COLLATE NOCASE ORDER BY n DESC, i.creator""",
+            *args.toTypedArray(),
+        ) { de.axelcypher.asmr.api.CreatorSummaryDto(it.getString(1), it.getInt(2), it.getString(3) != null) }
+    }
+
+    /** "Einer von": Track-IDs, Ordner-Bereiche oder eine zusätzliche Bedingung. Leer heißt: nichts. */
+    private fun anyOf(
+        where: MutableList<String>,
+        args: MutableList<Any?>,
+        ids: Set<Long>,
+        folders: List<String>,
+        extra: String?,
+    ) {
+        val parts = mutableListOf<String>()
+        if (ids.isNotEmpty()) {
+            parts += "i.id IN (${ids.joinToString { "?" }})"
+            args.addAll(ids)
+        }
+        folders.forEach {
+            val (from, to) = folderRange(it)
+            parts += "(i.audio_path >= ? AND i.audio_path < ?)"
+            args += from
+            args += to
+        }
+        extra?.let { parts += it }
+        where += if (parts.isEmpty()) "0" else parts.joinToString(" OR ", "(", ")")
     }
 
     suspend fun setCover(id: Long, coverPath: String?) =
@@ -238,6 +297,7 @@ class ItemStore(private val db: Database, private val now: () -> Long = System::
             sourceUrl = getString("source_url"),
             addedAt = getLong("added_at"),
             folder = folderOf(audioPath),
+            isAmbient = getInt("is_ambient") == 1,
         )
     }
 
@@ -249,6 +309,7 @@ class ItemStore(private val db: Database, private val now: () -> Long = System::
         coverPath = getString("cover_path"),
         levels = emptyMap(),
         sourceUrl = getString("source_url"),
+        ambient = getInt("is_ambient") == 1,
     )
 
     private companion object {

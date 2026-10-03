@@ -11,7 +11,10 @@ import de.axelcypher.asmr.api.LoginRequest
 import de.axelcypher.asmr.api.LoginResponse
 import de.axelcypher.asmr.api.UpdateCreatorRequest
 import de.axelcypher.asmr.api.UpdateItemRequest
+import de.axelcypher.asmr.server.db.AmbientFolderStore
+import de.axelcypher.asmr.server.db.CategoryStore
 import de.axelcypher.asmr.server.db.CreatorStore
+import de.axelcypher.asmr.server.db.PlaylistStore
 import de.axelcypher.asmr.server.db.Database
 import de.axelcypher.asmr.server.db.FolderAccessStore
 import de.axelcypher.asmr.server.db.ImportStore
@@ -71,9 +74,15 @@ class LibraryApiTest {
     private val items = ItemStore(db)
     private val imports = ImportStore(db)
     private val folderAccess = FolderAccessStore(db)
+    private val categories = CategoryStore(db)
+    private val ambientFolders = AmbientFolderStore(db)
+    private val playlists = PlaylistStore(db)
     private val creators = CreatorStore(db)
     private val lock = Mutex()
-    private val scanner = LibraryScanner(items, media, root.resolve("covers"), FakeProbe, lock, folderAccess)
+    private val scanner = LibraryScanner(
+        items, media, root.resolve("covers"), FakeProbe, lock,
+        folderOwners = listOf(folderAccess, categories, ambientFolders),
+    )
 
     @AfterTest
     fun cleanup() {
@@ -92,6 +101,9 @@ class LibraryApiTest {
             items = items,
             imports = imports,
             folderAccess = folderAccess,
+            categories = categories,
+            ambientFolders = ambientFolders,
+            playlists = playlists,
             creators = creators,
             worker = ImportWorker(imports, items, Downloader { _, _ -> error("kein Download") }, root.resolve("tmp"), media, lock),
             sso = null,
@@ -262,6 +274,88 @@ class LibraryApiTest {
         assertEquals(listOf("Spicy/Neu/Sub"), runBlocking { folderAccess.rules() }.map { it.path })
         val aliceToken = client.login("alice")
         assertEquals(HttpStatusCode.NotFound, client.get("/api/items/$idB") { bearerAuth(aliceToken) }.status)
+    }
+
+    @Test
+    fun `startseite mit kategorien, ambiente und playlists`() = api { client ->
+        file("Natur/rain.mp3")
+        file("Natur/Wald/birds.mp3")
+        file("Gibi ASMR/tapping.mp3")
+        file("Spicy/late.mp3")
+        users.create("admin", "geheimes-passwort", isAdmin = true)
+        users.create("alice", "geheimes-passwort", isAdmin = false)
+        scanner.scan()
+        val admin = client.login("admin")
+        val alice = client.login("alice")
+        val tapping = items.idByAudioPath("Gibi ASMR/tapping.mp3")!!
+        val late = items.idByAudioPath("Spicy/late.mp3")!!
+        client.put("/api/admin/access") {
+            bearerAuth(admin)
+            contentType(ContentType.Application.Json)
+            setBody(FolderAccessDto("Spicy"))
+        }
+
+        // Kategorie mit einem Ordner (rekursiv) und einem einzelnen Track; nur Admins legen an.
+        val forbidden = client.post("/api/categories") {
+            bearerAuth(alice)
+            contentType(ContentType.Application.Json)
+            setBody(de.axelcypher.asmr.api.CategoryRequest("Natur", "leaf", "#3B5A4C"))
+        }
+        assertEquals(HttpStatusCode.Forbidden, forbidden.status)
+        val natur = client.post("/api/categories") {
+            bearerAuth(admin)
+            contentType(ContentType.Application.Json)
+            setBody(de.axelcypher.asmr.api.CategoryRequest("Natur", "leaf", "#3B5A4C"))
+        }.body<de.axelcypher.asmr.api.CategoryDto>()
+        client.put("/api/categories/${natur.id}/folders?path=Natur") { bearerAuth(admin) }
+        client.put("/api/categories/${natur.id}/items/$tapping") { bearerAuth(admin) }
+        client.put("/api/categories/${natur.id}/items/$late") { bearerAuth(admin) }
+
+        // Ambiente: ein ganzer Ordner und ein einzelner Track (der in die Metadaten-Datei wandert).
+        client.put("/api/folders/ambient?path=Natur/Wald") { bearerAuth(admin) }
+        client.put("/api/items/$tapping/ambient") { bearerAuth(admin) }
+        assertTrue("\"ambient\": true" in Sidecars.pathFor(media.resolve("Gibi ASMR/tapping.mp3")).readText())
+
+        // Playlists: privat, dann geteilt; ändern darf nur der Besitzer.
+        val playlist = client.post("/api/playlists") {
+            bearerAuth(admin)
+            contentType(ContentType.Application.Json)
+            setBody(de.axelcypher.asmr.api.PlaylistRequest(name = "Einschlafen"))
+        }.body<de.axelcypher.asmr.api.PlaylistDto>()
+        client.put("/api/playlists/${playlist.id}/items/$tapping") { bearerAuth(admin) }
+        client.put("/api/playlists/${playlist.id}/items/$late") { bearerAuth(admin) }
+        assertEquals(HttpStatusCode.NotFound, client.get("/api/playlists/${playlist.id}") { bearerAuth(alice) }.status)
+        client.patch("/api/playlists/${playlist.id}") {
+            bearerAuth(admin)
+            contentType(ContentType.Application.Json)
+            setBody(de.axelcypher.asmr.api.PlaylistRequest(shared = true))
+        }
+        val forAlice = client.get("/api/playlists/${playlist.id}") { bearerAuth(alice) }.body<de.axelcypher.asmr.api.PlaylistDetailDto>()
+        assertEquals(listOf(tapping), forAlice.items.map { it.id }, "gesperrter Track bleibt unsichtbar")
+        assertFalse(forAlice.playlist.isMine)
+        val aliceEdit = client.put("/api/playlists/${playlist.id}/items/$tapping") { bearerAuth(alice) }
+        assertEquals(HttpStatusCode.Forbidden, aliceEdit.status)
+
+        val adminHome = client.get("/api/home") { bearerAuth(admin) }.body<de.axelcypher.asmr.api.HomeDto>()
+        assertEquals(4, adminHome.categories.single().itemCount)
+        assertEquals(setOf("birds", "tapping"), adminHome.ambient.map { it.title }.toSet())
+        assertTrue(adminHome.ambient.all { it.isAmbient })
+        assertEquals(2, adminHome.playlists.single().itemCount)
+
+        val aliceHome = client.get("/api/home") { bearerAuth(alice) }.body<de.axelcypher.asmr.api.HomeDto>()
+        assertEquals(3, aliceHome.categories.single().itemCount, "Spicy zählt für Alice nicht mit")
+        assertEquals(setOf("Gibi ASMR", "Natur"), aliceHome.creators.map { it.name }.toSet())
+        assertEquals(1, aliceHome.playlists.single().itemCount)
+
+        val inCategory = client.get("/api/items?category=${natur.id}") { bearerAuth(alice) }.body<ItemPage>()
+        assertEquals(setOf("rain", "birds", "tapping"), inCategory.items.map { it.title }.toSet())
+
+        // Ordner auf dem NAS umbenannt: Kategorie- und Ambient-Zuordnung wandern mit.
+        Files.move(media.resolve("Natur"), media.resolve("Natur & Wetter"))
+        scanner.scan()
+        val after = client.get("/api/home") { bearerAuth(admin) }.body<de.axelcypher.asmr.api.HomeDto>()
+        assertEquals(4, after.categories.single().itemCount)
+        assertEquals(listOf("Natur & Wetter/Wald"), runBlocking { ambientFolders.list() })
     }
 
     @Test

@@ -14,7 +14,10 @@ import de.axelcypher.asmr.server.auth.OidcClient
 import de.axelcypher.asmr.server.auth.SsoService
 import de.axelcypher.asmr.server.auth.pkceChallenge
 import de.axelcypher.asmr.server.auth.randomToken
+import de.axelcypher.asmr.server.db.AmbientFolderStore
+import de.axelcypher.asmr.server.db.CategoryStore
 import de.axelcypher.asmr.server.db.CreatorStore
+import de.axelcypher.asmr.server.db.PlaylistStore
 import de.axelcypher.asmr.server.db.Database
 import de.axelcypher.asmr.server.db.FolderAccessStore
 import de.axelcypher.asmr.server.db.ImportStore
@@ -72,6 +75,9 @@ class ServerTest {
     private val items = ItemStore(db)
     private val imports = ImportStore(db)
     private val folderAccess = FolderAccessStore(db)
+    private val categories = CategoryStore(db)
+    private val ambientFolders = AmbientFolderStore(db)
+    private val playlists = PlaylistStore(db)
     private val creators = CreatorStore(db)
 
     private var downloads = 0
@@ -109,6 +115,9 @@ class ServerTest {
             items = items,
             imports = imports,
             folderAccess = folderAccess,
+            categories = categories,
+            ambientFolders = ambientFolders,
+            playlists = playlists,
             creators = creators,
             worker = worker,
             sso = sso,

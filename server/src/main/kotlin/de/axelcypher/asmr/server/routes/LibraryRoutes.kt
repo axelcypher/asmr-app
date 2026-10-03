@@ -55,6 +55,7 @@ fun Route.libraryRoutes(services: Services) {
                 emptyList()
             }
             val restricted = services.folderAccess.rules().map { it.path }.toSet()
+            val ambientFolders = services.ambientFolders.list()
             val folders = (counts.keys + empty).distinct().sortedBy(String::lowercase).map { name ->
                 val childPath = join(path, name)
                 FolderDto(
@@ -63,9 +64,10 @@ fun Route.libraryRoutes(services: Services) {
                     itemCount = counts[name] ?: 0,
                     hasCover = folderCover(services, childPath) != null,
                     restricted = user.isAdmin && childPath in restricted,
+                    isAmbient = childPath in ambientFolders,
                 )
             }
-            call.respond(FolderListing(path, folders, all.filter { it.folder == path }))
+            call.respond(FolderListing(path, folders, all.filter { it.folder == path }.withAmbient(ambientFolders)))
         }
 
         get("/cover") {

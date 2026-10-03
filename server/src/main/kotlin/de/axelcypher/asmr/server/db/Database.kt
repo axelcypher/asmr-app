@@ -131,6 +131,40 @@ class Database private constructor(private val connection: Connection) {
             );
             ALTER TABLE item_tags ADD COLUMN level INTEGER NOT NULL DEFAULT 5
             """,
+            """
+            CREATE TABLE categories (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                icon TEXT NOT NULL,
+                color TEXT NOT NULL,
+                position INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE category_items (
+                category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+                item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+                PRIMARY KEY (category_id, item_id)
+            );
+            CREATE TABLE category_folders (
+                category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+                path TEXT NOT NULL,
+                PRIMARY KEY (category_id, path)
+            );
+            ALTER TABLE items ADD COLUMN is_ambient INTEGER NOT NULL DEFAULT 0;
+            CREATE TABLE ambient_folders (path TEXT PRIMARY KEY);
+            CREATE TABLE playlists (
+                id INTEGER PRIMARY KEY,
+                owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                shared INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+            );
+            CREATE TABLE playlist_items (
+                playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+                item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+                position INTEGER NOT NULL,
+                PRIMARY KEY (playlist_id, item_id)
+            )
+            """,
         )
     }
 }

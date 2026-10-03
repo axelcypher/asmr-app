@@ -69,6 +69,8 @@ data class ItemDto(
     val folder: String = "",
     /** Bewertungsmatrix: Trigger -> Stärke 1..10 (nur Einträge > 0). */
     val levels: Map<String, Int> = emptyMap(),
+    /** Als Ambiente markiert (direkt oder über den Ordner). */
+    val isAmbient: Boolean = false,
 )
 
 @Serializable
@@ -126,6 +128,8 @@ data class FolderDto(
     val hasCover: Boolean,
     /** Für Admins: Ordner hat eine Zugriffsbeschränkung. */
     val restricted: Boolean = false,
+    /** Ordner ist als Ambiente markiert. */
+    val isAmbient: Boolean = false,
 )
 
 @Serializable
@@ -158,3 +162,52 @@ data class CreatorDto(val name: String, val links: List<CreatorLinkDto>, val has
 
 @Serializable
 data class UpdateCreatorRequest(val links: List<String>)
+
+// --- Übersicht ----------------------------------------------------------------------------------
+
+@Serializable
+data class CreatorSummaryDto(val name: String, val itemCount: Int, val hasAvatar: Boolean)
+
+/** Frei definierte Kategorie; [icon] ist ein Schlüssel aus [CATEGORY_ICONS], [color] ein Hex-Wert. */
+@Serializable
+data class CategoryDto(val id: Long, val name: String, val icon: String, val color: String, val itemCount: Int = 0)
+
+@Serializable
+data class CategoryRequest(val name: String, val icon: String, val color: String)
+
+/** Zugeordnete Ordner einer Kategorie (für den Admin-Dialog). */
+@Serializable
+data class CategoryDetailDto(val category: CategoryDto, val folders: List<String>, val itemIds: List<Long>)
+
+@Serializable
+data class PlaylistDto(
+    val id: Long,
+    val name: String,
+    val ownerName: String,
+    val isMine: Boolean,
+    val shared: Boolean,
+    val itemCount: Int,
+    /** Cover des ersten Tracks, falls vorhanden. */
+    val coverItemId: Long?,
+)
+
+@Serializable
+data class PlaylistDetailDto(val playlist: PlaylistDto, val items: List<ItemDto>)
+
+@Serializable
+data class PlaylistRequest(val name: String? = null, val shared: Boolean? = null)
+
+@Serializable
+data class HomeDto(
+    val creators: List<CreatorSummaryDto>,
+    val favorites: List<ItemDto>,
+    val playlists: List<PlaylistDto>,
+    val ambient: List<ItemDto>,
+    val categories: List<CategoryDto>,
+)
+
+/** Icons, aus denen der Admin für Kategorien wählt (Pfade liegen in der App). */
+val CATEGORY_ICONS = listOf("headphones", "leaf", "tree", "home", "water", "fire", "moon", "star", "heart")
+
+/** Gedämpfte Farben passend zum Nachtdesign. */
+val CATEGORY_COLORS = listOf("#2F4A48", "#3B5A4C", "#3E4650", "#5A5636", "#4A3B5A", "#5A3B42", "#36485A", "#4F4A40")

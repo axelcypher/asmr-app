@@ -42,17 +42,21 @@ fun Route.itemRoutes(services: Services) {
                 tags = params.getAll("tag").orEmpty(),
                 creator = params["creator"],
                 favoritesOnly = params["favorites"] == "true",
+                category = params["category"]?.toLongOrNull()?.let { services.categories.members(it) },
+                ambientFolders = if (params["ambient"] == "true") services.ambientFolders.list() else null,
                 sort = params["sort"]?.let { runCatching { ItemSort.valueOf(it.uppercase()) }.getOrNull() }
                     ?: ItemSort.TITLE,
                 page = params["page"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0,
                 pageSize = params["pageSize"]?.toIntOrNull()?.coerceIn(1, MAX_PAGE_SIZE) ?: 60,
             )
-            call.respond(services.items.list(call.viewer(services), query))
+            val page = services.items.list(call.viewer(services), query)
+            call.respond(page.copy(items = page.items.withAmbient(services.ambientFolders.list())))
         }
 
         route("/{id}") {
             get {
-                call.respond(services.items.get(call.longParameter("id"), call.viewer(services)) ?: notFound())
+                val item = services.items.get(call.longParameter("id"), call.viewer(services)) ?: notFound()
+                call.respond(listOf(item).withAmbient(services.ambientFolders.list()).single())
             }
 
             // Metadaten ändern bzw. verschieben; landet in der Metadaten-Datei neben dem Track.

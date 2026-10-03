@@ -10,7 +10,15 @@ import kotlinx.serialization.builtins.serializer
  * SSO-Gruppen und Benutzer sichtbar; ohne Regel sehen ihn alle. Admins sehen immer alles.
  * Verschachtelte Regeln gelten zusätzlich: wer den Elternordner nicht sieht, sieht auch keinen Unterordner.
  */
-class FolderAccessStore(private val db: Database) {
+class FolderAccessStore(private val db: Database) : FolderPathOwner {
+
+    override suspend fun renameFolder(from: String, to: String) {
+        for (rule in rules()) {
+            val newPath = renamedPath(rule.path, from, to) ?: continue
+            remove(rule.path)
+            set(rule.copy(path = newPath))
+        }
+    }
 
     suspend fun rules(): List<FolderAccessDto> = db.tx {
         query("SELECT * FROM folder_access ORDER BY path") {

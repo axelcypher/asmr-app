@@ -4,7 +4,10 @@ import de.axelcypher.asmr.api.ApiJson
 import de.axelcypher.asmr.server.auth.OidcClient
 import de.axelcypher.asmr.server.auth.SsoService
 import de.axelcypher.asmr.server.auth.randomToken
+import de.axelcypher.asmr.server.db.AmbientFolderStore
+import de.axelcypher.asmr.server.db.CategoryStore
 import de.axelcypher.asmr.server.db.CreatorStore
+import de.axelcypher.asmr.server.db.PlaylistStore
 import de.axelcypher.asmr.server.db.Database
 import de.axelcypher.asmr.server.db.FolderAccessStore
 import de.axelcypher.asmr.server.db.ImportStore
@@ -56,7 +59,12 @@ fun main() {
     val libraryLock = Mutex()
     val coverDir = config.dataDir.resolve("covers").createDirectories()
     val folderAccess = FolderAccessStore(db)
-    val scanner = LibraryScanner(items, config.mediaDir, coverDir, FfmpegProbe(), libraryLock, folderAccess)
+    val categories = CategoryStore(db)
+    val ambientFolders = AmbientFolderStore(db)
+    val scanner = LibraryScanner(
+        items, config.mediaDir, coverDir, FfmpegProbe(), libraryLock,
+        folderOwners = listOf(folderAccess, categories, ambientFolders),
+    )
     val worker = ImportWorker(
         imports = imports,
         items = items,
@@ -70,6 +78,9 @@ fun main() {
         items = items,
         imports = imports,
         folderAccess = folderAccess,
+        categories = categories,
+        ambientFolders = ambientFolders,
+        playlists = PlaylistStore(db),
         creators = CreatorStore(db),
         worker = worker,
         sso = sso,
