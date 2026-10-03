@@ -67,6 +67,9 @@ class AppContainer(context: Context) {
         }
     }
 
+    /** Meldungen aus der Update-Installation (Abbruch, Fehler), als Snackbar in der Bibliothek. */
+    val updateMessages = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 4)
+
     /** Letzte Bildfehler (neueste zuerst), für die Diagnose im Profil. */
     val imageErrors = MutableStateFlow<List<String>>(emptyList())
 

@@ -122,7 +122,9 @@ fun LibraryScreen(
     var showFilters by remember { mutableStateOf(false) }
 
     LaunchedEffect(viewModel) { viewModel.messages.collect { snackbar.showSnackbar(it) } }
-    LaunchedEffect(viewModel) { viewModel.intents.collect { context.startActivity(it) } }
+    LaunchedEffect(Unit) {
+        (context.applicationContext as de.axelcypher.asmr.AsmrApp).container.updateMessages.collect { snackbar.showSnackbar(it) }
+    }
     LaunchedEffect(shared) { if (shared != null) dialog = LibraryDialog.Import }
 
     val cards = CardContext(state.serverUrl, state.imageVersion, state.isAdmin, downloads)

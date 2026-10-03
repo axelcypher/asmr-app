@@ -2,7 +2,9 @@ package de.axelcypher.asmr.update
 
 import android.content.Context
 import android.content.Intent
-import androidx.core.content.FileProvider
+import android.app.PendingIntent
+import android.content.pm.PackageInstaller
+import android.os.Build
 import de.axelcypher.asmr.BuildConfig
 import de.axelcypher.asmr.api.ApiJson
 import de.axelcypher.asmr.data.settings.UpdateChannel
@@ -18,7 +20,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import java.io.File
 
 data class AppUpdate(val versionCode: Int, val versionName: String, val apkUrl: String)
 
@@ -51,18 +52,37 @@ class AppUpdater(private val context: Context) {
             ?.takeIf { it.versionCode > BuildConfig.VERSION_CODE }
     }
 
-    /** Lädt das APK und liefert den Intent, der den System-Installer öffnet. */
-    suspend fun download(update: AppUpdate): Intent {
+    /**
+     * Lädt das APK und übergibt es per [PackageInstaller]-Session an Android. Rückfragen (Bestätigung,
+     * Play Protect) meldet das System an [UpdateResultReceiver], der den Dialog öffnet; anders als
+     * ein loser ACTION_VIEW-Intent geht der Ablauf so nicht verloren, wenn Play Protect dazwischenfunkt.
+     */
+    suspend fun install(update: AppUpdate) {
         val bytes = http.get(update.apkUrl).readRawBytes()
-        val file = withContext(Dispatchers.IO) {
-            File(context.cacheDir, "updates").apply { mkdirs() }
-                .resolve("asmr-player.apk")
-                .apply { writeBytes(bytes) }
+        withContext(Dispatchers.IO) {
+            val installer = context.packageManager.packageInstaller
+            val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
+                setAppPackageName(context.packageName)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+                }
+            }
+            val sessionId = installer.createSession(params)
+            installer.openSession(sessionId).use { session ->
+                session.openWrite("asmr-player.apk", 0, bytes.size.toLong()).use { out ->
+                    out.write(bytes)
+                    session.fsync(out)
+                }
+                val callback = PendingIntent.getBroadcast(
+                    context,
+                    sessionId,
+                    Intent(context, UpdateResultReceiver::class.java),
+                    // Mutable: das System trägt Status und ggf. den Bestätigungs-Intent ein.
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+                )
+                session.commit(callback.intentSender)
+            }
         }
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.updates", file)
-        return Intent(Intent.ACTION_VIEW)
-            .setDataAndType(uri, "application/vnd.android.package-archive")
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 
     @Serializable

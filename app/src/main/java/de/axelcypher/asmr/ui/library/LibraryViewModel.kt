@@ -1,6 +1,5 @@
 package de.axelcypher.asmr.ui.library
 
-import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import de.axelcypher.asmr.api.AccessOverviewDto
@@ -93,9 +92,6 @@ class LibraryViewModel(
     private val messageChannel = Channel<String>(Channel.BUFFERED)
     val messages = messageChannel.receiveAsFlow()
 
-    /** Intents, die die Oberfläche starten soll (Installer fürs Update). */
-    private val intentChannel = Channel<Intent>(Channel.BUFFERED)
-    val intents = intentChannel.receiveAsFlow()
 
     val updateChannel = settings.updateChannel
 
@@ -407,7 +403,7 @@ class LibraryViewModel(
         _state.update { it.copy(isDownloadingUpdate = true) }
         viewModelScope.launch {
             try {
-                intentChannel.send(updater.download(update))
+                updater.install(update)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
