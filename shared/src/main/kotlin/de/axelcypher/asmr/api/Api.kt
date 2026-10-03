@@ -213,7 +213,10 @@ data class HomeDto(
 )
 
 /** Icons, aus denen der Admin für Kategorien wählt (Pfade liegen in der App). */
-val CATEGORY_ICONS = listOf("headphones", "leaf", "tree", "home", "water", "fire", "moon", "star", "heart")
+val CATEGORY_ICONS = listOf(
+    "headphones", "music", "mic", "ear", "speaker", "leaf", "tree", "water", "cloud", "fire", "bolt", "sun", "moon",
+    "star", "heart", "smile", "meditation", "bed", "home", "coffee", "book", "brush",
+)
 
 /** Gedämpfte Farben passend zum Nachtdesign. */
 val CATEGORY_COLORS = listOf("#2F4A48", "#3B5A4C", "#3E4650", "#5A5636", "#4A3B5A", "#5A3B42", "#36485A", "#4F4A40")
