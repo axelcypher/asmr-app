@@ -28,7 +28,8 @@ class SsoService(
 ) {
     private val log = LoggerFactory.getLogger(SsoService::class.java)
 
-    private data class PendingLogin(val codeVerifier: String, val appChallenge: String, val createdAt: Long)
+    /** [web]: Login kommt aus der Admin-Weboberfläche statt aus der App. */
+    private data class PendingLogin(val codeVerifier: String, val appChallenge: String, val createdAt: Long, val web: Boolean)
     private data class LoginCode(val userId: Long, val appChallenge: String, val createdAt: Long)
 
     private val pending = ConcurrentHashMap<String, PendingLogin>()
@@ -36,12 +37,15 @@ class SsoService(
 
     val providerName get() = config.providerName
 
-    suspend fun start(appChallenge: String): String {
+    /** Ziel für Web-Logins; der Code steht im Fragment, damit er nicht in Server-Logs landet. */
+    private val webRedirect = callbackUrl.removeSuffix("/api/auth/sso/callback") + "/admin/"
+
+    suspend fun start(appChallenge: String, web: Boolean = false): String {
         if (!CHALLENGE.matches(appChallenge)) throw OidcException("Ungültige code_challenge")
         cleanup()
         val state = randomToken()
         val verifier = randomToken(48)
-        pending[state] = PendingLogin(verifier, appChallenge, now())
+        pending[state] = PendingLogin(verifier, appChallenge, now(), web)
         return oidc.authorizationUrl(callbackUrl, state, nonce = randomToken(), codeChallenge = pkceChallenge(verifier))
     }
 
@@ -64,6 +68,9 @@ class SsoService(
         } catch (e: OidcException) {
             log.warn("SSO-Login fehlgeschlagen: {}", e.message)
             "error" to (e.message ?: "SSO fehlgeschlagen")
+        }
+        if (login?.web == true) {
+            return "$webRedirect#sso_${result.first}=" + java.net.URLEncoder.encode(result.second, Charsets.UTF_8)
         }
         return URLBuilder(APP_SSO_REDIRECT).apply { parameters.append(result.first, result.second) }.buildString()
     }

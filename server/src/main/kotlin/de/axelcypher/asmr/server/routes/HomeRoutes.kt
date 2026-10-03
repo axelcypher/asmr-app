@@ -1,6 +1,8 @@
 package de.axelcypher.asmr.server.routes
 
 import de.axelcypher.asmr.api.CATEGORY_ICONS
+import de.axelcypher.asmr.api.CatalogDto
+import de.axelcypher.asmr.api.TriggerGroupDto
 import de.axelcypher.asmr.api.CategoryDetailDto
 import de.axelcypher.asmr.api.CategoryDto
 import de.axelcypher.asmr.api.CategoryRequest
@@ -52,12 +54,30 @@ fun Route.homeRoutes(services: Services) {
 
     get("/creators") { call.respond(services.items.creators(call.viewer(services))) }
 
+    // Trigger-Katalog (gruppiert) und Auswahl für Kategorien, damit die Weboberfläche nichts doppelt pflegt.
+    get("/catalog") {
+        call.respond(
+            CatalogDto(
+                triggers = de.axelcypher.asmr.api.TRIGGER_CATALOG.map { (group, triggers) -> TriggerGroupDto(group, triggers) },
+                categoryIcons = CATEGORY_ICONS,
+                categoryColors = de.axelcypher.asmr.api.CATEGORY_COLORS,
+            ),
+        )
+    }
+
     route("/categories") {
         get { call.respond(categories(services, call.viewer(services))) }
 
         post {
             call.requireAdmin()
             call.respond(HttpStatusCode.Created, services.categories.create(call.receive<CategoryRequest>().validated()))
+        }
+
+        // Reihenfolge, wie sie in der App erscheint (Weboberfläche: ▲/▼).
+        put("/order") {
+            call.requireAdmin()
+            services.categories.reorder(call.receive<de.axelcypher.asmr.api.OrderRequest>().ids)
+            call.respond(HttpStatusCode.NoContent)
         }
 
         route("/{id}") {

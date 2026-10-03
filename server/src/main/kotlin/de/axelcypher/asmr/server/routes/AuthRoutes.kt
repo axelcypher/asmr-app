@@ -9,6 +9,7 @@ import de.axelcypher.asmr.server.ApiException
 import de.axelcypher.asmr.server.Services
 import de.axelcypher.asmr.server.auth.OidcException
 import de.axelcypher.asmr.server.auth.Passwords
+import de.axelcypher.asmr.server.setSessionCookieIfWeb
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -31,7 +32,9 @@ fun Route.authRoutes(services: Services) = route("/auth") {
         if (user == null || hash == null || !Passwords.verify(request.password, hash)) {
             throw ApiException(HttpStatusCode.Unauthorized, "Benutzername oder Passwort falsch")
         }
-        call.respond(LoginResponse(services.users.createSession(user.id), user.toDto()))
+        val token = services.users.createSession(user.id)
+        call.setSessionCookieIfWeb(token)
+        call.respond(LoginResponse(token, user.toDto()))
     }
 
     route("/sso") {
@@ -40,7 +43,7 @@ fun Route.authRoutes(services: Services) = route("/auth") {
             val challenge = call.request.queryParameters["code_challenge"]
                 ?: throw ApiException(HttpStatusCode.BadRequest, "code_challenge fehlt")
             val url = try {
-                sso.start(challenge)
+                sso.start(challenge, web = call.request.queryParameters["target"] == "web")
             } catch (e: OidcException) {
                 throw ApiException(HttpStatusCode.BadGateway, e.message ?: "SSO nicht erreichbar")
             }
@@ -58,7 +61,9 @@ fun Route.authRoutes(services: Services) = route("/auth") {
             val request = call.receive<SsoExchangeRequest>()
             val user = sso.exchange(request.code, request.codeVerifier)?.let { services.users.byId(it) }
                 ?: throw ApiException(HttpStatusCode.Unauthorized, "Anmeldecode ungültig oder abgelaufen")
-            call.respond(LoginResponse(services.users.createSession(user.id), user.toDto()))
+            val token = services.users.createSession(user.id)
+            call.setSessionCookieIfWeb(token)
+            call.respond(LoginResponse(token, user.toDto()))
         }
     }
 }

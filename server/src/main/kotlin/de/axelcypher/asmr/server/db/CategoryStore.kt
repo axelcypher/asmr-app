@@ -35,6 +35,12 @@ class CategoryStore(private val db: Database) : FolderPathOwner {
 
     suspend fun delete(id: Long) = db.tx { update("DELETE FROM categories WHERE id = ?", id) }
 
+    /** Neue Reihenfolge; nicht genannte Kategorien rutschen ans Ende. */
+    suspend fun reorder(ids: List<Long>) = db.tx {
+        ids.forEachIndexed { index, id -> update("UPDATE categories SET position = ? WHERE id = ?", index, id) }
+        update("UPDATE categories SET position = ? WHERE id NOT IN (${ids.joinToString { "?" }.ifEmpty { "NULL" }})", ids.size, *ids.toTypedArray())
+    }
+
     suspend fun members(id: Long): CategoryMembers = db.tx {
         CategoryMembers(
             itemIds = query("SELECT item_id FROM category_items WHERE category_id = ?", id) { it.getLong(1) }.toSet(),

@@ -6,6 +6,7 @@ import de.axelcypher.asmr.server.ApiException
 import de.axelcypher.asmr.server.Services
 import de.axelcypher.asmr.server.UserPrincipal
 import de.axelcypher.asmr.server.auth.Passwords
+import de.axelcypher.asmr.server.clearSessionCookie
 import de.axelcypher.asmr.server.currentUser
 import de.axelcypher.asmr.server.longParameter
 import de.axelcypher.asmr.server.requireAdmin
@@ -16,6 +17,7 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
+import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 
@@ -24,6 +26,7 @@ private const val MIN_PASSWORD_LENGTH = 10
 fun Route.userRoutes(services: Services) {
     post("/auth/logout") {
         services.users.deleteSession(call.principal<UserPrincipal>()!!.token)
+        call.clearSessionCookie()
         call.respond(HttpStatusCode.NoContent)
     }
 
@@ -57,6 +60,23 @@ fun Route.userRoutes(services: Services) {
         checkPassword(request.password)
         val user = services.users.create(request.username.trim(), request.password, request.isAdmin)
         call.respond(HttpStatusCode.Created, user.toDto())
+    }
+
+    // Admin-Rolle umschalten bzw. Passwort zurücksetzen (Weboberfläche).
+    patch("/users/{id}") {
+        val admin = call.requireAdmin()
+        val id = call.longParameter("id")
+        services.users.byId(id) ?: throw ApiException(HttpStatusCode.NotFound, "Nicht gefunden")
+        val request = call.receive<de.axelcypher.asmr.api.UpdateUserRequest>()
+        request.isAdmin?.let { makeAdmin ->
+            if (!makeAdmin && id == admin.id) throw ApiException(HttpStatusCode.BadRequest, "Die eigene Admin-Rolle bleibt")
+            services.users.setAdmin(id, makeAdmin)
+        }
+        request.password?.let {
+            checkPassword(it)
+            services.users.setPassword(id, it)
+        }
+        call.respond(services.users.byId(id)!!.toDto())
     }
 
     delete("/users/{id}") {

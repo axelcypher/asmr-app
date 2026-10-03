@@ -29,7 +29,14 @@ import io.ktor.server.application.install
 import io.ktor.server.auth.Authentication
 import io.ktor.server.auth.authenticate
 import io.ktor.server.auth.bearer
+import io.ktor.server.auth.parseAuthorizationHeader
 import io.ktor.server.auth.principal
+import io.ktor.server.http.content.staticResources
+import io.ktor.http.HttpMethod
+import io.ktor.http.auth.HttpAuthHeader
+import io.ktor.http.Cookie
+import io.ktor.server.request.header
+import io.ktor.server.request.httpMethod
 import io.ktor.server.plugins.BadRequestException
 import io.ktor.server.plugins.autohead.AutoHeadResponse
 import io.ktor.server.plugins.calllogging.CallLogging
@@ -131,6 +138,14 @@ fun Application.asmrModule(services: Services) {
     }
     install(Authentication) {
         bearer("api") {
+            // Die Weboberfläche lädt Audio und Cover per <audio>/<img>, die keinen Header senden können:
+            // dafür gilt das Session-Cookie, aber nur für lesende Anfragen (Schutz vor CSRF).
+            authHeader { call ->
+                call.request.parseAuthorizationHeader()
+                    ?: call.request.cookies[SESSION_COOKIE]
+                        ?.takeIf { call.request.httpMethod == HttpMethod.Get }
+                        ?.let { HttpAuthHeader.Single("Bearer", it) }
+            }
             authenticate { credential ->
                 services.users.userForToken(credential.token)?.let { UserPrincipal(it, credential.token) }
             }
@@ -139,6 +154,8 @@ fun Application.asmrModule(services: Services) {
 
     routing {
         get("/health") { call.respondText("ok") }
+        // Admin-Weboberfläche (statisch, spricht die API wie die App).
+        staticResources("/admin", "admin", index = "index.html")
         route("/api") {
             authRoutes(services)
             authenticate("api") {
@@ -150,4 +167,31 @@ fun Application.asmrModule(services: Services) {
             }
         }
     }
+}
+
+/** Session-Cookie der Weboberfläche. */
+const val SESSION_COOKIE = "asmr_session"
+
+/** Die Weboberfläche schickt diesen Header beim Login; dann gibt es zusätzlich das Cookie. */
+private const val WEB_HEADER = "X-Asmr-Web"
+
+/** Setzt nach dem Login das Cookie für die Weboberfläche (nur wenn sie danach fragt). */
+fun ApplicationCall.setSessionCookieIfWeb(token: String) {
+    if (request.header(WEB_HEADER) != "1") return
+    val https = request.header("X-Forwarded-Proto") == "https" || request.local.scheme == "https"
+    response.cookies.append(
+        Cookie(
+            name = SESSION_COOKIE,
+            value = token,
+            httpOnly = true,
+            secure = https,
+            path = "/",
+            maxAge = 180 * 24 * 3600,
+            extensions = mapOf("SameSite" to "Strict"),
+        ),
+    )
+}
+
+fun ApplicationCall.clearSessionCookie() {
+    response.cookies.append(Cookie(name = SESSION_COOKIE, value = "", path = "/", maxAge = 0, httpOnly = true))
 }

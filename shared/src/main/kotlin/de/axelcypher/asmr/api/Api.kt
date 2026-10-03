@@ -211,3 +211,17 @@ val CATEGORY_ICONS = listOf("headphones", "leaf", "tree", "home", "water", "fire
 
 /** Gedämpfte Farben passend zum Nachtdesign. */
 val CATEGORY_COLORS = listOf("#2F4A48", "#3B5A4C", "#3E4650", "#5A5636", "#4A3B5A", "#5A3B42", "#36485A", "#4F4A40")
+
+/** Admin ändert ein Konto; nur gesetzte Felder werden geändert. */
+@Serializable
+data class UpdateUserRequest(val isAdmin: Boolean? = null, val password: String? = null)
+
+@Serializable
+data class TriggerGroupDto(val name: String, val triggers: List<String>)
+
+/** Auswahllisten für die Weboberfläche. */
+@Serializable
+data class CatalogDto(val triggers: List<TriggerGroupDto>, val categoryIcons: List<String>, val categoryColors: List<String>)
+
+@Serializable
+data class OrderRequest(val ids: List<Long>)

@@ -205,26 +205,32 @@ fun PlaylistCard(playlist: PlaylistDto, context: CardContext, modifier: Modifier
 @Composable
 private fun CategoryGrid(categories: List<CategoryDto>, isAdmin: Boolean, callbacks: HomeCallbacks) {
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        categories.chunked(2).forEach { row ->
+        categories.chunked(CATEGORY_COLUMNS).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 row.forEach { category ->
-                    val color = parseColor(category.color)
-                    Row(
+                    // Drei Spalten sind schmal: Icon oben, Name und Anzahl darunter.
+                    Column(
                         Modifier
                             .weight(1f)
-                            .height(64.dp)
+                            .height(92.dp)
                             .clip(RoundedCornerShape(14.dp))
-                            .background(color)
+                            .background(parseColor(category.color))
                             .combinedClickable(
                                 onClick = { callbacks.onCategory(category) },
                                 onLongClick = { if (isAdmin) callbacks.onCategoryEdit(category) },
                             )
-                            .padding(horizontal = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                            .padding(horizontal = 10.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Icon(AppIcons.category(category.icon), contentDescription = null, tint = Color.White.copy(alpha = 0.85f))
-                        Column(Modifier.padding(start = 12.dp)) {
-                            Text(category.name, style = MaterialTheme.typography.titleSmall, color = Color.White, maxLines = 1)
+                        Column {
+                            Text(
+                                category.name,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                             Text(
                                 "${category.itemCount} Inhalte",
                                 style = MaterialTheme.typography.bodySmall,
@@ -233,11 +239,13 @@ private fun CategoryGrid(categories: List<CategoryDto>, isAdmin: Boolean, callba
                         }
                     }
                 }
-                if (row.size == 1) Spacer(Modifier.weight(1f))
+                repeat(CATEGORY_COLUMNS - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
 }
+
+private const val CATEGORY_COLUMNS = 3
 
 fun parseColor(hex: String): Color =
     runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrDefault(Color(0xFF2F4A48))

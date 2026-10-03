@@ -29,12 +29,14 @@ import io.ktor.client.call.body
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsBytes
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
@@ -356,6 +358,59 @@ class LibraryApiTest {
         val after = client.get("/api/home") { bearerAuth(admin) }.body<de.axelcypher.asmr.api.HomeDto>()
         assertEquals(4, after.categories.single().itemCount)
         assertEquals(listOf("Natur & Wetter/Wald"), runBlocking { ambientFolders.list() })
+    }
+
+    @Test
+    fun `weboberflaeche, cookie nur fuer lesen, benutzer und reihenfolge`() = api { client ->
+        file("a.mp3")
+        users.create("admin", "geheimes-passwort", isAdmin = true)
+        val bob = users.create("bob", "geheimes-passwort", isAdmin = false)
+        scanner.scan()
+        val id = items.idByAudioPath("a.mp3")!!
+
+        val page = client.get("/admin/")
+        assertEquals(HttpStatusCode.OK, page.status)
+        assertTrue("ASMR Admin" in String(page.bodyAsBytes()))
+
+        // Login aus der Weboberfläche setzt ein HttpOnly-Cookie ...
+        val login = client.post("/api/auth/login") {
+            header("X-Asmr-Web", "1")
+            contentType(ContentType.Application.Json)
+            setBody(LoginRequest("admin", "geheimes-passwort"))
+        }
+        val setCookie = login.headers.getAll(HttpHeaders.SetCookie).orEmpty().single { it.startsWith("$SESSION_COOKIE=") }
+        assertTrue("HttpOnly" in setCookie)
+        val cookie = setCookie.substringBefore(';')
+
+        // ... das zum Lesen (Audio im <audio>-Tag) reicht, zum Ändern aber nicht (CSRF).
+        assertEquals(HttpStatusCode.OK, client.get("/api/items/$id/audio") { header(HttpHeaders.Cookie, cookie) }.status)
+        val forged = client.patch("/api/items/$id") {
+            header(HttpHeaders.Cookie, cookie)
+            contentType(ContentType.Application.Json)
+            setBody(UpdateItemRequest(title = "gekapert"))
+        }
+        assertEquals(HttpStatusCode.Unauthorized, forged.status)
+
+        val token = login.body<LoginResponse>().token
+        val promoted = client.patch("/api/users/${bob.id}") {
+            bearerAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(de.axelcypher.asmr.api.UpdateUserRequest(isAdmin = true, password = "neues-passwort-1"))
+        }.body<de.axelcypher.asmr.api.UserDto>()
+        assertTrue(promoted.isAdmin)
+        assertEquals(HttpStatusCode.OK, client.post("/api/auth/login") {
+            contentType(ContentType.Application.Json)
+            setBody(LoginRequest("bob", "neues-passwort-1"))
+        }.status)
+
+        val first = categories.create(de.axelcypher.asmr.api.CategoryRequest("Eins", "leaf", "#3B5A4C"))
+        val second = categories.create(de.axelcypher.asmr.api.CategoryRequest("Zwei", "leaf", "#3B5A4C"))
+        client.put("/api/categories/order") {
+            bearerAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(de.axelcypher.asmr.api.OrderRequest(listOf(second.id, first.id)))
+        }
+        assertEquals(listOf("Zwei", "Eins"), runBlocking { categories.list() }.map { it.name })
     }
 
     @Test

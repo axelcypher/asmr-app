@@ -83,6 +83,9 @@ class UserStore(private val db: Database, private val now: () -> Long = System::
 
     suspend fun delete(userId: Long) = db.tx { update("DELETE FROM users WHERE id = ?", userId) }
 
+    suspend fun setAdmin(userId: Long, isAdmin: Boolean) =
+        db.tx { update("UPDATE users SET is_admin = ? WHERE id = ?", isAdmin, userId) }
+
     suspend fun createSession(userId: Long): String {
         val token = randomToken()
         db.tx {
