@@ -68,3 +68,25 @@ Loops, Trigger-Filter und Offline-Nutzung.
 - Wie kommen Inhalte in ABS (YouTube-Download via yt-dlp + Skript, Patreon-Downloads, manuell)?
 - Tagging automatisieren (aus Titel/Beschreibung)?
 - Zugriff von unterwegs: Reverse Proxy / Tailscale
+
+## Entwicklung
+
+Voraussetzungen: Android Studio (bringt JDK und SDK mit), compileSdk 37.
+
+```sh
+./gradlew testDebugUnitTest assembleDebug
+```
+
+Stand: Login am ABS-Server (Access-/Refresh-Token, ab ABS 2.26) und Bibliothek als Grid mit
+Cover, Creator und Länge, Nachladen beim Scrollen, Wechsel zwischen Bibliotheken.
+
+### Release-Signatur
+
+- Keystore und Passwörter liegen außerhalb des Repos unter `~/.keystores/`
+  (`asmr-app-release.jks`, `asmr-app-keystore.properties`). Lokale Release-Builds lesen sie
+  automatisch.
+- GitHub Actions nutzt die Repo-Secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
+  `ANDROID_KEY_ALIAS` und `ANDROID_KEY_PASSWORD`.
+- Jeder Push auf `main` baut ein signiertes APK als Artefakt; ein Tag `v*` erzeugt zusätzlich
+  ein GitHub-Release.
+- Den Keystore sicher sichern: ohne ihn lassen sich installierte Versionen nicht mehr updaten.
