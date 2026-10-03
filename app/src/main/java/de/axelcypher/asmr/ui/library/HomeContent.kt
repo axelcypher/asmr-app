@@ -52,7 +52,7 @@ class HomeCallbacks(
 )
 
 @Composable
-fun HomeContent(home: HomeDto?, context: CardContext, callbacks: HomeCallbacks) {
+fun HomeContent(home: HomeDto?, context: CardContext, callbacks: HomeCallbacks, footer: @Composable () -> Unit = {}) {
     if (home == null) return
     LazyColumn(contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         if (home.creators.isNotEmpty()) {
@@ -128,6 +128,7 @@ fun HomeContent(home: HomeDto?, context: CardContext, callbacks: HomeCallbacks) 
                 CategoryGrid(home.categories, context.isAdmin, callbacks)
             }
         }
+        item { footer() }
     }
 }
 

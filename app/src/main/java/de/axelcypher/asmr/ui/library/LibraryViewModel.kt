@@ -8,6 +8,7 @@ import de.axelcypher.asmr.api.CategoryDto
 import de.axelcypher.asmr.api.CategoryRequest
 import de.axelcypher.asmr.api.HomeDto
 import de.axelcypher.asmr.api.PlaylistDto
+import de.axelcypher.asmr.api.TagDto
 import de.axelcypher.asmr.api.FolderAccessDto
 import de.axelcypher.asmr.api.FolderDto
 import de.axelcypher.asmr.api.ImportJobDto
@@ -65,6 +66,11 @@ data class LibraryUiState(
     val categories: List<CategoryDto> = emptyList(),
     /** Für den Zuordnungs-Dialog: Kategorie-IDs eines Tracks bzw. Ordners. */
     val categoryMembership: Set<Long> = emptySet(),
+    val search: SearchFilters = SearchFilters(),
+    val searchResults: List<ItemDto> = emptyList(),
+    val isSearching: Boolean = false,
+    /** Trigger mit Anzahl für die Filterauswahl. */
+    val availableTags: List<TagDto> = emptyList(),
 ) {
     val runningImports get() = imports.count { it.status == ImportStatus.QUEUED || it.status == ImportStatus.RUNNING }
     val breadcrumbs: List<String> get() = if (path.isEmpty()) emptyList() else path.split('/')
@@ -94,6 +100,7 @@ class LibraryViewModel(
     private var loadJob: Job? = null
     private var pollJob: Job? = null
     private var importsLoaded = false
+    private var searchJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -226,6 +233,39 @@ class LibraryViewModel(
         client.setFolderAmbient(path, ambient)
         refreshAll()
     }
+
+    // --- Suche ---------------------------------------------------------------------------------
+
+    /** Ändert Suchtext oder Filter; gesucht wird kurz nach der letzten Änderung. */
+    fun updateSearch(change: (SearchFilters) -> SearchFilters) {
+        _state.update { it.copy(search = change(it.search)) }
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            val search = _state.value.search
+            if (!search.isActive) {
+                _state.update { it.copy(searchResults = emptyList(), isSearching = false) }
+                return@launch
+            }
+            _state.update { it.copy(isSearching = true) }
+            delay(SEARCH_DEBOUNCE_MS)
+            try {
+                val results = client.search(
+                    search.query, search.tags, search.creator, search.favoritesOnly,
+                    search.length.minSeconds, search.length.maxSeconds, search.sort,
+                )
+                _state.update { it.copy(searchResults = results, isSearching = false) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.update { it.copy(isSearching = false) }
+                messageChannel.send("Suche fehlgeschlagen: ${e.message}")
+            }
+        }
+    }
+
+    fun clearSearch() = updateSearch { SearchFilters() }
+
+    fun loadTags() = action(null) { _state.update { it.copy(availableTags = client.tags()) } }
 
     // --- Kategorien (Admin) ---------------------------------------------------------------------
 
@@ -392,6 +432,7 @@ class LibraryViewModel(
 
     private companion object {
         const val IMPORT_POLL_MS = 3000L
+        const val SEARCH_DEBOUNCE_MS = 300L
     }
 }
 
@@ -408,4 +449,26 @@ sealed interface Detail {
     data object Favorites : Detail
     data object Ambient : Detail
     data object Playlists : Detail
+}
+
+enum class LengthFilter(val label: String, val minSeconds: Int?, val maxSeconds: Int?) {
+    Any("Egal", null, null),
+    Short("Bis 15 min", null, 15 * 60),
+    Medium("15–45 min", 15 * 60, 45 * 60),
+    Long("Über 45 min", 45 * 60, null),
+}
+
+data class SearchFilters(
+    val query: String = "",
+    /** Alle müssen vorkommen (Stärke > 0). */
+    val tags: Set<String> = emptySet(),
+    val creator: String? = null,
+    val favoritesOnly: Boolean = false,
+    val length: LengthFilter = LengthFilter.Any,
+    val sort: de.axelcypher.asmr.api.ItemSort = de.axelcypher.asmr.api.ItemSort.TITLE,
+) {
+    /** Anzahl gesetzter Filter (ohne Suchtext und Sortierung), für das Badge am Filter-Knopf. */
+    val filterCount get() = tags.size + listOfNotNull(creator).size + (if (favoritesOnly) 1 else 0) + (if (length != LengthFilter.Any) 1 else 0)
+
+    val isActive get() = query.isNotBlank() || filterCount > 0
 }

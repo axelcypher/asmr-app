@@ -54,6 +54,9 @@ data class ItemQuery(
     val category: CategoryMembers? = null,
     /** Nur Ambiente: markierte Tracks oder Tracks in diesen Ordnern. */
     val ambientFolders: List<String>? = null,
+    /** Länge in Sekunden (jeweils inklusive). */
+    val minDuration: Double? = null,
+    val maxDuration: Double? = null,
     val sort: ItemSort = ItemSort.TITLE,
     val page: Int = 0,
     val pageSize: Int = 60,
@@ -131,6 +134,14 @@ class ItemStore(private val db: Database, private val now: () -> Long = System::
         if (q.favoritesOnly) where += "f.item_id IS NOT NULL"
         q.category?.let { anyOf(where, args, it.itemIds, it.folders, extra = null) }
         q.ambientFolders?.let { anyOf(where, args, emptySet(), it, extra = "i.is_ambient = 1") }
+        q.minDuration?.let {
+            where += "i.duration_seconds >= ?"
+            args += it
+        }
+        q.maxDuration?.let {
+            where += "i.duration_seconds <= ?"
+            args += it
+        }
         hiddenClause(viewer, where, args)
         val whereSql = if (where.isEmpty()) "" else "WHERE " + where.joinToString(" AND ")
         val order = when (q.sort) {

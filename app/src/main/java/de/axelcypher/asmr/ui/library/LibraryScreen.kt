@@ -37,9 +37,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -122,6 +119,7 @@ fun LibraryScreen(
     var showDownloads by rememberSaveable { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<LibraryDialog?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
+    var showFilters by remember { mutableStateOf(false) }
 
     LaunchedEffect(viewModel) { viewModel.messages.collect { snackbar.showSnackbar(it) } }
     LaunchedEffect(viewModel) { viewModel.intents.collect { context.startActivity(it) } }
@@ -188,8 +186,13 @@ fun LibraryScreen(
     }
 
     val detail = state.detail
-    BackHandler(enabled = tab == Tab.Library && !showDownloads && (detail != null || (folderView && state.path.isNotEmpty()))) {
-        if (detail != null) viewModel.closeDetail() else viewModel.up()
+    BackHandler(enabled = tab == Tab.Library && !showDownloads && (detail != null || folderView || state.search.isActive)) {
+        when {
+            detail != null -> viewModel.closeDetail()
+            folderView && state.path.isNotEmpty() -> viewModel.up()
+            folderView -> folderView = false
+            else -> viewModel.clearSearch()
+        }
     }
 
     Scaffold(
@@ -283,7 +286,6 @@ fun LibraryScreen(
 
                 else -> Column(Modifier.fillMaxSize()) {
                     UpdateBanner(state, viewModel)
-                    ViewSwitch(folderView) { folderView = it }
                     if (folderView) {
                         if (state.breadcrumbs.isNotEmpty()) Breadcrumbs(state.breadcrumbs, onOpen = viewModel::open)
                         FolderContent(
@@ -291,6 +293,7 @@ fun LibraryScreen(
                             cards = cards,
                             viewModel = viewModel,
                             onShowDownloads = { showDownloads = true },
+                            onOverview = { folderView = false },
                             onPlay = ::play,
                             onItemAction = ::onItemAction,
                             onFolderAction = { folder, action ->
@@ -312,7 +315,19 @@ fun LibraryScreen(
                     } else if (state.home == null && state.offline) {
                         OfflineHint(viewModel, onShowDownloads = { showDownloads = true })
                     } else {
-                        HomeContent(
+                        SearchBar(
+                            state.search,
+                            onQuery = { query -> viewModel.updateSearch { it.copy(query = query) } },
+                            onClear = viewModel::clearSearch,
+                            onFilters = {
+                                viewModel.loadTags()
+                                showFilters = true
+                            },
+                        )
+                        if (state.search.isActive) {
+                            SearchResults(state.searchResults, state.isSearching, cards, onPlay = ::play, onItemAction = ::onItemAction)
+                        } else {
+                            HomeContent(
                             state.home, cards,
                             HomeCallbacks(
                                 onCreator = { viewModel.openDetail(Detail.Creator(it)) },
@@ -324,11 +339,23 @@ fun LibraryScreen(
                                 onCategory = { viewModel.openDetail(Detail.Category(it)) },
                                 onCategoryEdit = { dialog = LibraryDialog.CategoryEdit(it) },
                             ),
+                            footer = { SubtleLink("Ordneransicht") { folderView = true } },
                         )
+                        }
                     }
                 }
             }
         }
+    }
+
+    if (showFilters) {
+        FilterSheet(
+            search = state.search,
+            tags = state.availableTags,
+            creators = state.home?.creators?.map { it.name }.orEmpty(),
+            onChange = viewModel::updateSearch,
+            onDismiss = { showFilters = false },
+        )
     }
 
     LibraryDialogs(dialog, state, viewModel, client, shared, onClose = {
@@ -337,20 +364,13 @@ fun LibraryScreen(
     })
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** Unauffälliger Wechsel zwischen Übersicht und Ordneransicht, jeweils am Ende der Liste. */
 @Composable
-private fun ViewSwitch(folderView: Boolean, onChange: (Boolean) -> Unit) {
-    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
-        SegmentedButton(
-            selected = !folderView,
-            onClick = { onChange(false) },
-            shape = SegmentedButtonDefaults.itemShape(0, 2),
-        ) { Text("Übersicht") }
-        SegmentedButton(
-            selected = folderView,
-            onClick = { onChange(true) },
-            shape = SegmentedButtonDefaults.itemShape(1, 2),
-        ) { Text("Ordner") }
+fun SubtleLink(label: String, onClick: () -> Unit) {
+    Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+        TextButton(onClick = onClick) {
+            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
@@ -501,6 +521,7 @@ private fun FolderContent(
     cards: CardContext,
     viewModel: LibraryViewModel,
     onShowDownloads: () -> Unit,
+    onOverview: () -> Unit,
     onPlay: (List<ItemDto>, Int) -> Unit,
     onFolderAction: (FolderDto, FolderAction) -> Unit,
     onItemAction: (ItemDto, ItemAction) -> Unit,
@@ -552,6 +573,7 @@ private fun FolderContent(
                 itemsIndexed(state.items, key = { _, item -> item.id }) { index, item ->
                     TrackCard(item, cards, onClick = { onPlay(state.items, index) }, onAction = { onItemAction(item, it) })
                 }
+                item(span = { GridItemSpan(maxLineSpan) }) { SubtleLink("Zur Übersicht", onOverview) }
             }
         }
     }

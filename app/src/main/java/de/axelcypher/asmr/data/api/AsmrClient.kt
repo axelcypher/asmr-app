@@ -217,6 +217,29 @@ class AsmrClient(engine: HttpClientEngine, private val sessionStore: SessionStor
             parameter("pageSize", 200)
         }.body<ItemPage>().items
 
+    /** Trigger mit Anzahl (nur sichtbare Tracks), für die Filterauswahl. */
+    suspend fun tags(): List<de.axelcypher.asmr.api.TagDto> = httpClient.get("${base()}/api/tags").body()
+
+    /** Freie Suche mit Filtern; [tags] müssen alle vorkommen. */
+    suspend fun search(
+        query: String,
+        tags: Collection<String>,
+        creator: String?,
+        favoritesOnly: Boolean,
+        minDuration: Int?,
+        maxDuration: Int?,
+        sort: de.axelcypher.asmr.api.ItemSort,
+    ): List<ItemDto> = httpClient.get("${base()}/api/items") {
+        if (query.isNotBlank()) parameter("q", query.trim())
+        tags.forEach { parameter("tag", it) }
+        creator?.let { parameter("creator", it) }
+        if (favoritesOnly) parameter("favorites", "true")
+        minDuration?.let { parameter("minDuration", it) }
+        maxDuration?.let { parameter("maxDuration", it) }
+        parameter("sort", sort.name)
+        parameter("pageSize", 200)
+    }.body<ItemPage>().items
+
     suspend fun setFavorite(itemId: Long, favorite: Boolean) {
         val url = "${base()}/api/items/$itemId/favorite"
         if (favorite) httpClient.put(url) else httpClient.delete(url)

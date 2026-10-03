@@ -95,6 +95,23 @@ class ScannerTest {
     }
 
     @Test
+    fun `suche mit trigger, laenge und creator kombiniert`() = runBlocking {
+        val userId = UserStore(db).create("t", null, isAdmin = false).id
+        file("Gibi ASMR/Rain Tapping.mp3") // 120 s, Rain + Tapping
+        file("Gibi ASMR/tagged long.mp3") // 600 s, Soft Spoken
+        file("Other/Rain only.mp3") // 120 s, Rain
+        scanner.scan()
+        val viewer = Viewer(userId)
+        fun titles(q: ItemQuery) = runBlocking { items.list(viewer, q).items.map { it.title }.toSet() }
+
+        assertEquals(setOf("Rain Tapping", "Rain only"), titles(ItemQuery(tags = listOf("rain"))))
+        assertEquals(setOf("Rain Tapping"), titles(ItemQuery(tags = listOf("Rain", "Tapping"))))
+        assertEquals(setOf("Getaggter Titel"), titles(ItemQuery(minDuration = 300.0)))
+        assertEquals(setOf("Rain Tapping", "Rain only"), titles(ItemQuery(maxDuration = 300.0)))
+        assertEquals(setOf("Rain only"), titles(ItemQuery(search = "only", creator = "other")))
+    }
+
+    @Test
     fun `leerer medienordner loescht nichts`() = runBlocking {
         val f = file("a.mp3")
         scanner.scan()

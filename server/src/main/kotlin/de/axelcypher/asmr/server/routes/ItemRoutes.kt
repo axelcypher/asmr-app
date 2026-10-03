@@ -44,6 +44,8 @@ fun Route.itemRoutes(services: Services) {
                 favoritesOnly = params["favorites"] == "true",
                 category = params["category"]?.toLongOrNull()?.let { services.categories.members(it) },
                 ambientFolders = if (params["ambient"] == "true") services.ambientFolders.list() else null,
+                minDuration = params["minDuration"]?.toDoubleOrNull(),
+                maxDuration = params["maxDuration"]?.toDoubleOrNull(),
                 sort = params["sort"]?.let { runCatching { ItemSort.valueOf(it.uppercase()) }.getOrNull() }
                     ?: ItemSort.TITLE,
                 page = params["page"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0,
