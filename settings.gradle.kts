@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "asmr-app"
-include(":app")
+include(":app", ":shared", ":server")

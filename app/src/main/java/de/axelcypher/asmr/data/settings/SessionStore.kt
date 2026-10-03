@@ -8,23 +8,19 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
-data class Session(
-    val serverUrl: String,
-    val username: String,
-    val accessToken: String,
-    val refreshToken: String?,
-)
+data class Session(val serverUrl: String, val username: String, val token: String)
 
-/** Hält Server-Verbindung und Tokens. Ohne gespeicherte Session ist der Nutzer abgemeldet. */
+/** Ein begonnener SSO-Login; überlebt, falls Android die App während des Browser-Logins beendet. */
+data class PendingSso(val serverUrl: String, val codeVerifier: String)
+
+/** Hält Server-Verbindung und Token. Ohne gespeicherte Session ist der Nutzer abgemeldet. */
 class SessionStore(private val dataStore: DataStore<Preferences>) {
 
     val session: Flow<Session?> = dataStore.data.map { prefs ->
         val serverUrl = prefs[SERVER_URL] ?: return@map null
-        val accessToken = prefs[ACCESS_TOKEN] ?: return@map null
-        Session(serverUrl, prefs[USERNAME].orEmpty(), accessToken, prefs[REFRESH_TOKEN])
+        val token = prefs[TOKEN] ?: return@map null
+        Session(serverUrl, prefs[USERNAME].orEmpty(), token)
     }
-
-    val selectedLibraryId: Flow<String?> = dataStore.data.map { it[LIBRARY_ID] }
 
     /** Zuletzt verwendete Server-URL, bleibt auch nach dem Abmelden erhalten. */
     val lastServerUrl: Flow<String?> = dataStore.data.map { it[SERVER_URL] }
@@ -35,42 +31,39 @@ class SessionStore(private val dataStore: DataStore<Preferences>) {
         dataStore.edit {
             it[SERVER_URL] = session.serverUrl
             it[USERNAME] = session.username
-            it[ACCESS_TOKEN] = session.accessToken
-            it.setOrRemove(REFRESH_TOKEN, session.refreshToken)
+            it[TOKEN] = session.token
         }
-    }
-
-    suspend fun updateTokens(accessToken: String, refreshToken: String?) {
-        dataStore.edit {
-            it[ACCESS_TOKEN] = accessToken
-            it.setOrRemove(REFRESH_TOKEN, refreshToken)
-        }
-    }
-
-    suspend fun selectLibrary(libraryId: String) {
-        dataStore.edit { it[LIBRARY_ID] = libraryId }
     }
 
     suspend fun clear() {
+        dataStore.edit { it.remove(TOKEN) }
+    }
+
+    suspend fun startSso(pending: PendingSso) {
         dataStore.edit {
-            it.remove(ACCESS_TOKEN)
-            it.remove(REFRESH_TOKEN)
-            it.remove(LIBRARY_ID)
+            it[SSO_SERVER_URL] = pending.serverUrl
+            it[SSO_VERIFIER] = pending.codeVerifier
         }
     }
 
-    private fun androidx.datastore.preferences.core.MutablePreferences.setOrRemove(
-        key: Preferences.Key<String>,
-        value: String?,
-    ) {
-        if (value != null) this[key] = value else remove(key)
+    /** Liefert den offenen SSO-Login und vergisst ihn dabei (der Verifier gilt nur einmal). */
+    suspend fun takePendingSso(): PendingSso? {
+        var pending: PendingSso? = null
+        dataStore.edit {
+            val serverUrl = it[SSO_SERVER_URL]
+            val verifier = it[SSO_VERIFIER]
+            if (serverUrl != null && verifier != null) pending = PendingSso(serverUrl, verifier)
+            it.remove(SSO_SERVER_URL)
+            it.remove(SSO_VERIFIER)
+        }
+        return pending
     }
 
     private companion object {
         val SERVER_URL = stringPreferencesKey("server_url")
         val USERNAME = stringPreferencesKey("username")
-        val ACCESS_TOKEN = stringPreferencesKey("access_token")
-        val REFRESH_TOKEN = stringPreferencesKey("refresh_token")
-        val LIBRARY_ID = stringPreferencesKey("library_id")
+        val TOKEN = stringPreferencesKey("token")
+        val SSO_SERVER_URL = stringPreferencesKey("sso_server_url")
+        val SSO_VERIFIER = stringPreferencesKey("sso_verifier")
     }
 }

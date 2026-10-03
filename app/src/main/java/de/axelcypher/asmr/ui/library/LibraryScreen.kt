@@ -16,8 +16,6 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -27,9 +25,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,8 +33,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
-import de.axelcypher.asmr.data.api.AbsClient
-import de.axelcypher.asmr.data.api.AsmrItem
+import de.axelcypher.asmr.api.ItemDto
+import de.axelcypher.asmr.data.api.AsmrClient
 import de.axelcypher.asmr.ui.formatDuration
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -50,7 +45,7 @@ fun LibraryScreen(viewModel: LibraryViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { LibraryPicker(state, onSelect = viewModel::selectLibrary) },
+                title = { Text("Bibliothek") },
                 actions = { TextButton(onClick = viewModel::logout) { Text("Abmelden") } },
             )
         },
@@ -68,39 +63,10 @@ fun LibraryScreen(viewModel: LibraryViewModel) {
                 state.items.isEmpty() && error != null ->
                     ErrorMessage(error, onRetry = viewModel::reload, Modifier.align(Alignment.Center))
 
-                state.items.isEmpty() && state.libraries.isEmpty() ->
-                    Text("Keine Bibliothek gefunden", Modifier.align(Alignment.Center))
-
                 state.items.isEmpty() ->
-                    Text("Diese Bibliothek ist leer", Modifier.align(Alignment.Center))
+                    Text("Noch keine Inhalte importiert", Modifier.align(Alignment.Center))
 
                 else -> ItemGrid(state, onLoadMore = viewModel::loadMore)
-            }
-        }
-    }
-}
-
-@Composable
-private fun LibraryPicker(state: LibraryUiState, onSelect: (String) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    val title = state.selectedLibrary?.name ?: "Bibliothek"
-    if (state.libraries.size <= 1) {
-        Text(title)
-        return
-    }
-    Box {
-        TextButton(onClick = { expanded = true }) {
-            Text("$title ▾", style = MaterialTheme.typography.titleLarge)
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            state.libraries.forEach { library ->
-                DropdownMenuItem(
-                    text = { Text(library.name) },
-                    onClick = {
-                        expanded = false
-                        onSelect(library.id)
-                    },
-                )
             }
         }
     }
@@ -132,7 +98,7 @@ private fun ItemGrid(state: LibraryUiState, onLoadMore: () -> Unit) {
 }
 
 @Composable
-private fun ItemCard(item: AsmrItem, serverUrl: String) {
+private fun ItemCard(item: ItemDto, serverUrl: String) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         val coverModifier = Modifier
             .fillMaxWidth()
@@ -141,7 +107,7 @@ private fun ItemCard(item: AsmrItem, serverUrl: String) {
             .background(MaterialTheme.colorScheme.surfaceVariant)
         if (item.hasCover) {
             AsyncImage(
-                model = AbsClient.coverUrl(serverUrl, item.id),
+                model = AsmrClient.coverUrl(serverUrl, item.id),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = coverModifier,

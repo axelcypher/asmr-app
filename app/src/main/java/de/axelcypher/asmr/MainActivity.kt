@@ -1,5 +1,6 @@
 package de.axelcypher.asmr
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -12,6 +13,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import de.axelcypher.asmr.api.APP_SSO_REDIRECT
 import de.axelcypher.asmr.ui.library.LibraryScreen
 import de.axelcypher.asmr.ui.library.LibraryViewModel
 import de.axelcypher.asmr.ui.login.LoginScreen
@@ -21,10 +23,12 @@ import kotlinx.coroutines.flow.map
 
 class MainActivity : ComponentActivity() {
 
+    private val container get() = (application as AsmrApp).container
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val container = (application as AsmrApp).container
+        if (savedInstanceState == null) handleIntent(intent)
         setContent {
             AsmrTheme {
                 Surface(Modifier.fillMaxSize()) {
@@ -32,6 +36,16 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent) {
+        val uri = intent.data ?: return
+        if (uri.toString().startsWith(APP_SSO_REDIRECT)) container.onSsoRedirect(uri)
     }
 }
 
@@ -53,12 +67,12 @@ private fun AsmrRoot(container: AppContainer) {
     when (val state = sessionState) {
         SessionState.Loading -> Unit
         SessionState.LoggedOut -> LoginScreen(
-            viewModel { LoginViewModel(container.absClient, container.sessionStore) },
+            viewModel { LoginViewModel(container.asmrClient, container.sessionStore, container.ssoRedirects) },
         )
         // Key pro Benutzer, damit nach einem Benutzerwechsel ein frisches ViewModel entsteht.
         is SessionState.LoggedIn -> LibraryScreen(
             viewModel(key = "library-${state.username}") {
-                LibraryViewModel(container.absClient, container.sessionStore)
+                LibraryViewModel(container.asmrClient, container.sessionStore)
             },
         )
     }

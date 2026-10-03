@@ -1,60 +1,110 @@
 # ASMR Media Player
 
-Android-App zum Einschlafen und Entspannen mit ASMR-Inhalten, angebunden an einen eigenen
-[Audiobookshelf](https://www.audiobookshelf.org/)-Server (ABS), der bereits vorhanden ist.
+Android-App zum Einschlafen und Entspannen mit ASMR-Inhalten, mit eigenem Server als Backend.
 
-Abgrenzung zur ABS-App bzw. Plappa: kein Hörbuch-Player, sondern Fokus auf Sleep-Timer,
-Loops, Trigger-Filter und Offline-Nutzung.
+Kein Hörbuch-Player, sondern Fokus auf Sleep-Timer, Loops, Trigger-Filter und Offline-Nutzung.
+Audiobookshelf wurde verworfen: das Datenmodell (Bücher/Podcasts) passt nicht zu einzelnen Clips
+mit Trigger-Tags, und Inhalte sollen per yt-dlp direkt auf dem Server importiert werden.
 
-## Server (Audiobookshelf)
+## Aufbau
 
-- Eigene Bibliothek "ASMR" (Typ Podcast oder Buch, noch offen; siehe Offene Fragen)
-- Anbindung über die ABS REST API: Login/API-Token, Bibliotheken und Items, Streaming
-  (Play-Session starten/schließen), Cover, Tags, Genres, Collections, Playlists
-- Metadaten: Creator als Autor, Trigger als Tags (Tapping, Whispering, Rain, Roleplay,
-  Brushing, ...), Länge
-- Fortschritt-Sync nur für lange Items (Grenze noch offen, etwa > 30 min), kurze Clips ignorieren
+| Modul | Inhalt |
+| --- | --- |
+| `app/` | Android-App (Kotlin, Jetpack Compose) |
+| `server/` | Backend (Kotlin, Ktor, SQLite), läuft als Docker-Container |
+| `shared/` | API-Modelle, die App und Server gemeinsam nutzen |
 
-## Features
+## Server
 
-**Bibliothek**
+- **Konten:** mehrere Benutzer mit eigenen Favoriten. Login per Passwort oder SSO (OIDC, z.B.
+  Authentik). Session-Tokens werden nur gehasht gespeichert und laufen nach 180 Tagen ohne
+  Nutzung ab.
+- **Erster Start:** ohne Konten legt der Server `admin` mit Zufallspasswort an und schreibt das
+  Passwort einmalig ins Log.
+- **Bibliothek:** Titel, Creator, Länge, Trigger-Tags, Cover; Suche, Filter nach mehreren Tags,
+  Creator und Favoriten, Sortierung nach Titel, Datum oder zufällig.
+- **Streaming:** `GET /api/items/{id}/audio` mit Range-Requests (Spulen in Media3, Downloads).
+- **Import:** `POST /api/imports` mit einer URL; yt-dlp lädt Audio (ohne Neukodierung), Cover und
+  Metadaten. Trigger-Tags werden aus Titel und Beschreibung abgeleitet. Doppelte Quellen werden
+  erkannt.
+- **Speicher:** Audiodateien und Cover auf dem NAS (`/media`, NFS), Datenbank in `/data`.
+
+### SSO
+
+Ablauf für die App: Die App öffnet `/api/auth/sso/start` im Custom Tab, der Server führt den
+Authorization Code Flow mit PKCE gegen den Provider aus und leitet mit einem Einmal-Code auf
+`de.axelcypher.asmr://sso` zurück. Die App tauscht den Code (zusätzlich per PKCE an die App
+gebunden) gegen ein Session-Token.
+
+Neue Identitäten werden wie bei DeckLedger über `ASMR_OIDC_ACCOUNT_MATCHING` zugeordnet:
+`manual` (nur bereits verknüpfte), `email` (verifizierte E-Mail eines unverknüpften Kontos) oder
+`auto_provision` (zusätzlich neues Konto anlegen). Mitglieder von `ASMR_OIDC_ADMIN_GROUP` werden
+bei jedem Login Admin.
+
+Im Provider (Authentik) als Redirect-URI eintragen: `https://<host>/api/auth/sso/callback`.
+
+### Umgebungsvariablen
+
+| Variable | Bedeutung | Standard |
+| --- | --- | --- |
+| `ASMR_PORT` | HTTP-Port | `8080` |
+| `ASMR_DATA_DIR` | Datenbank, temporäre Downloads | `/data` |
+| `ASMR_MEDIA_DIR` | Audiodateien und Cover | `/media` |
+| `ASMR_PUBLIC_URL` | öffentliche Basis-URL, Pflicht für SSO | – |
+| `ASMR_YTDLP` | Pfad zu yt-dlp | `yt-dlp` |
+| `ASMR_OIDC_CLIENT_ID` | aktiviert SSO | – |
+| `ASMR_OIDC_CLIENT_SECRET` | leer bei Public Client | – |
+| `ASMR_OIDC_DISCOVERY_URL` | `.well-known/openid-configuration` des Providers | – |
+| `ASMR_OIDC_PROVIDER_NAME` | Name auf dem Login-Button | `SSO` |
+| `ASMR_OIDC_SCOPES` | angefragte Scopes | `openid email profile` |
+| `ASMR_OIDC_USERNAME_CLAIM` | Claim für den Benutzernamen | `preferred_username` |
+| `ASMR_OIDC_ADMIN_GROUP` | Gruppe (Claim `groups`) für Admin-Rechte | – |
+| `ASMR_OIDC_ACCOUNT_MATCHING` | `manual`, `email`, `auto_provision` | `auto_provision` |
+
+### Deployment
+
+Die Workflow-Datei `.github/workflows/server.yml` testet den Server, baut das Image
+`ghcr.io/axelcypher/asmr-server` und setzt den neuen `sha-…`-Tag in
+`axelcypher/gitops-homelab` (`apps/docker/asmr-server/prod.env`). Komodo deployt von dort per
+Resource Sync auf `vm-docker-01`. Dafür braucht das Repo das Secret `GITOPS_DEPLOY_TOKEN`
+(Schreibrecht auf gitops-homelab).
+
+## App-Features (geplant)
+
+### Bibliothek
+
 - Grid/Liste mit Cover, Creator, Länge
 - Filter nach Trigger-Tags (Mehrfachauswahl), Creator, Länge
-- Suche, Favoriten (ABS-Collection "Favoriten"), zuletzt gehört
+- Suche, Favoriten, zuletzt gehört
 - "Zufällig"-Button: Zufallstitel aus dem aktuellen Filter
+- Import per URL (auch über "Teilen" aus der YouTube-App)
 
-**Player**
+### Player
+
 - Play/Pause, Seek, ±15 s
 - Loop (Einzeltitel / Playlist), Shuffle, Gapless Playback
 - Lautstärke-Normalisierung (die Creator sind sehr unterschiedlich laut)
 - Lockscreen- und Notification-Controls, Kopfhörer-/Bluetooth-Tasten
 - Android Auto (optional)
 
-**Sleep-Timer**
+### Sleep-Timer
+
 - Presets 15 / 30 / 45 / 60 / 90 min, Ende des Titels
 - Einstellbares Fade-Out (1–5 min)
 - Shake-to-extend (+10 min)
 - Optional: Schwarz-/Dim-Modus, automatisch "Nicht stören"
 
-**Offline**
+### Offline
+
 - Downloads einzelner Items / Playlists
 - Automatischer Download von Favoriten (nur WLAN)
 - Speicherlimit und Auto-Cleanup
 
 **Später:** zweite Spur als Ambient-Layer (Regen, Rauschen) mit eigener Lautstärke
 
-## Tech-Stack
-
-- Kotlin + Jetpack Compose
-- Media3 (ExoPlayer + MediaSessionService) für Hintergrund-Wiedergabe, Lockscreen und Android Auto
-- Retrofit oder Ktor für die ABS API
-- Room als lokaler Cache für Bibliothek, Downloads und Fortschritt
-- WorkManager für Downloads und Sync
-- DataStore für Einstellungen (Server-URL, Token, Timer-Standardwerte)
-
 ## MVP
 
-1. Login + Bibliothek anzeigen
+1. Login + Bibliothek anzeigen ✔
 2. Streaming mit Media3 inkl. Lockscreen
 3. Sleep-Timer mit Fade-Out
 4. Loop + Shuffle
@@ -63,22 +113,18 @@ Loops, Trigger-Filter und Offline-Nutzung.
 
 ## Offene Fragen
 
-- Reicht die ABS-App oder Plappa mit kleinen Anpassungen?
-- ABS-Bibliothekstyp: Podcast vs. Buch, was bildet Einzel-Clips besser ab?
-- Wie kommen Inhalte in ABS (YouTube-Download via yt-dlp + Skript, Patreon-Downloads, manuell)?
-- Tagging automatisieren (aus Titel/Beschreibung)?
-- Zugriff von unterwegs: Reverse Proxy / Tailscale
+- Fortschritt merken: nur für lange Items (etwa > 30 min)?
+- Weitere Importwege (Patreon-Downloads, Upload)?
 
 ## Entwicklung
 
 Voraussetzungen: Android Studio (bringt JDK und SDK mit), compileSdk 37.
 
 ```sh
-./gradlew testDebugUnitTest assembleDebug
+./gradlew testDebugUnitTest :server:test assembleDebug
+# Server lokal starten (yt-dlp und ffmpeg im PATH für Importe)
+ASMR_DATA_DIR=./tmp/data ASMR_MEDIA_DIR=./tmp/media ./gradlew :server:run
 ```
-
-Stand: Login am ABS-Server (Access-/Refresh-Token, ab ABS 2.26) und Bibliothek als Grid mit
-Cover, Creator und Länge, Nachladen beim Scrollen, Wechsel zwischen Bibliotheken.
 
 ### Release-Signatur
 

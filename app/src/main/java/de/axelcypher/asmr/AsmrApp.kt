@@ -19,6 +19,6 @@ class AsmrApp : Application(), SingletonImageLoader.Factory {
     // Cover laufen über denselben HttpClient wie die API und bekommen so automatisch das Token.
     override fun newImageLoader(context: PlatformContext): ImageLoader =
         ImageLoader.Builder(context)
-            .components { add(KtorNetworkFetcherFactory(httpClient = { container.absClient.httpClient })) }
+            .components { add(KtorNetworkFetcherFactory(httpClient = { container.asmrClient.httpClient })) }
             .build()
 }
