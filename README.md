@@ -1,19 +1,19 @@
 # ASMR Media Player
 
 Android-App zum Einschlafen und Entspannen mit ASMR-Inhalten, angebunden an einen eigenen
-[Audiobookshelf](https://www.audiobookshelf.org/)-Server.
+[Audiobookshelf](https://www.audiobookshelf.org/)-Server (ABS), der bereits vorhanden ist.
 
 Abgrenzung zur ABS-App bzw. Plappa: kein Hörbuch-Player, sondern Fokus auf Sleep-Timer,
 Loops, Trigger-Filter und Offline-Nutzung.
 
 ## Server (Audiobookshelf)
 
-- Eigene Bibliothek "ASMR" (Typ Podcast oder Buch, noch offen)
+- Eigene Bibliothek "ASMR" (Typ Podcast oder Buch, noch offen; siehe Offene Fragen)
 - Anbindung über die ABS REST API: Login/API-Token, Bibliotheken und Items, Streaming
   (Play-Session starten/schließen), Cover, Tags, Genres, Collections, Playlists
 - Metadaten: Creator als Autor, Trigger als Tags (Tapping, Whispering, Rain, Roleplay,
   Brushing, ...), Länge
-- Fortschritt-Sync nur für lange Items (> 30 min), kurze Clips ignorieren
+- Fortschritt-Sync nur für lange Items (Grenze noch offen, etwa > 30 min), kurze Clips ignorieren
 
 ## Features
 
@@ -26,7 +26,7 @@ Loops, Trigger-Filter und Offline-Nutzung.
 **Player**
 - Play/Pause, Seek, ±15 s
 - Loop (Einzeltitel / Playlist), Shuffle, Gapless Playback
-- Lautstärke-Normalisierung
+- Lautstärke-Normalisierung (die Creator sind sehr unterschiedlich laut)
 - Lockscreen- und Notification-Controls, Kopfhörer-/Bluetooth-Tasten
 - Android Auto (optional)
 
@@ -46,11 +46,11 @@ Loops, Trigger-Filter und Offline-Nutzung.
 ## Tech-Stack
 
 - Kotlin + Jetpack Compose
-- Media3 (ExoPlayer + MediaSessionService)
+- Media3 (ExoPlayer + MediaSessionService) für Hintergrund-Wiedergabe, Lockscreen und Android Auto
 - Retrofit oder Ktor für die ABS API
-- Room als lokaler Cache
+- Room als lokaler Cache für Bibliothek, Downloads und Fortschritt
 - WorkManager für Downloads und Sync
-- DataStore für Einstellungen
+- DataStore für Einstellungen (Server-URL, Token, Timer-Standardwerte)
 
 ## MVP
 
@@ -64,7 +64,7 @@ Loops, Trigger-Filter und Offline-Nutzung.
 ## Offene Fragen
 
 - Reicht die ABS-App oder Plappa mit kleinen Anpassungen?
-- ABS-Bibliothekstyp: Podcast vs. Buch?
-- Wie kommen Inhalte in ABS (yt-dlp + Skript, Patreon, manuell)?
+- ABS-Bibliothekstyp: Podcast vs. Buch, was bildet Einzel-Clips besser ab?
+- Wie kommen Inhalte in ABS (YouTube-Download via yt-dlp + Skript, Patreon-Downloads, manuell)?
 - Tagging automatisieren (aus Titel/Beschreibung)?
 - Zugriff von unterwegs: Reverse Proxy / Tailscale
