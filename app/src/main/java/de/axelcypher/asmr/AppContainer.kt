@@ -51,9 +51,15 @@ class AppContainer(context: Context) {
     /** Per "Teilen" an die App geschickte URL, die importiert werden soll. */
     val sharedUrl = MutableStateFlow<String?>(null)
 
+    /** Aktuelle Session für Stellen ohne Coroutine (OkHttp-Interceptor des Bildladers). */
+    @Volatile
+    var currentSession: de.axelcypher.asmr.data.settings.Session? = null
+        private set
+
     init {
         scope.launch {
             sessionStore.session.collect { session ->
+                currentSession = session
                 httpDataSourceFactory.setDefaultRequestProperties(
                     session?.let { mapOf("Authorization" to "Bearer ${it.token}") } ?: emptyMap(),
                 )
