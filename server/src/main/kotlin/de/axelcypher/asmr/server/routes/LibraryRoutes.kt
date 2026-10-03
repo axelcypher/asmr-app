@@ -129,6 +129,21 @@ fun Route.libraryRoutes(services: Services) {
             call.respond(services.creators.get(name))
         }
 
+        // Als Creator markieren: nur markierte erscheinen in der Creator-Reihe der App.
+        put("/marked") {
+            call.requireAdmin()
+            val name = call.creatorName()
+            services.creators.setCreator(name, true)
+            call.respond(services.creators.get(name))
+        }
+
+        delete("/marked") {
+            call.requireAdmin()
+            val name = call.creatorName()
+            services.creators.setCreator(name, false)
+            call.respond(services.creators.get(name))
+        }
+
         get("/avatar") {
             val avatar = services.creators.avatarPath(call.creatorName()) ?: notFound()
             call.respondFile(services.storedFile(avatar))

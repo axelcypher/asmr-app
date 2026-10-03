@@ -141,6 +141,16 @@ fun CreatorSheet(
             }
 
             if (isAdmin) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("In der Creator-Reihe anzeigen", modifier = Modifier.weight(1f))
+                    androidx.compose.material3.Switch(
+                        checked = creator?.isCreator == true,
+                        enabled = !busy && creator != null,
+                        onCheckedChange = { marked ->
+                            run { client.setCreatorMarked(name, marked).also { onImagesChanged() } }
+                        },
+                    )
+                }
                 if (editing) {
                     OutlinedTextField(
                         linksText,

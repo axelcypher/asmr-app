@@ -158,7 +158,13 @@ data class AccessOverviewDto(
 data class CreatorLinkDto(val url: String, val label: String)
 
 @Serializable
-data class CreatorDto(val name: String, val links: List<CreatorLinkDto>, val hasAvatar: Boolean)
+data class CreatorDto(
+    val name: String,
+    val links: List<CreatorLinkDto>,
+    val hasAvatar: Boolean,
+    /** Als Creator markiert: erscheint in der Creator-Reihe der Übersicht. */
+    val isCreator: Boolean = false,
+)
 
 @Serializable
 data class UpdateCreatorRequest(val links: List<String>)
@@ -166,7 +172,7 @@ data class UpdateCreatorRequest(val links: List<String>)
 // --- Übersicht ----------------------------------------------------------------------------------
 
 @Serializable
-data class CreatorSummaryDto(val name: String, val itemCount: Int, val hasAvatar: Boolean)
+data class CreatorSummaryDto(val name: String, val itemCount: Int, val hasAvatar: Boolean, val isCreator: Boolean = false)
 
 /** Frei definierte Kategorie; [icon] ist ein Schlüssel aus [CATEGORY_ICONS], [color] ein Hex-Wert. */
 @Serializable

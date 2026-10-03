@@ -641,11 +641,16 @@ async function renderCreators(el, selectedName) {
   const panel = h('div', { class: 'panel' });
   clear(el, h('h1', {}, 'Creator'), h('div', { class: 'split' },
     h('div', { class: 'card' }, h('table', {},
-      h('thead', {}, h('tr', {}, h('th', {}), h('th', {}, 'Name'), h('th', {}, 'Tracks'))),
+      h('thead', {}, h('tr', {}, h('th', {}), h('th', {}, 'Name'), h('th', {}, 'Tracks'), h('th', {}, 'Als Creator'))),
       h('tbody', {}, creators.map((c) => h('tr', { class: 'clickable', onclick: () => creatorPanel(panel, c.name, () => renderCreators(el, c.name)) },
         h('td', {}, c.hasAvatar ? h('img', { class: 'thumb', style: { borderRadius: '50%' }, src: `/api/creators/${enc(c.name)}/avatar?t=${Date.now()}` }) : h('div', { class: 'thumb' })),
         h('td', {}, c.name),
-        h('td', { class: 'muted' }, c.itemCount)))))),
+        h('td', { class: 'muted' }, c.itemCount),
+        h('td', {}, h('input', {
+          type: 'checkbox', checked: c.isCreator, title: 'In der Creator-Reihe der App anzeigen',
+          onclick: (e) => e.stopPropagation(),
+          onchange: async (e) => { await run(() => api(`/creators/${enc(c.name)}/marked`, { method: e.target.checked ? 'PUT' : 'DELETE' }), e.target.checked ? 'Als Creator markiert' : 'Markierung entfernt'); },
+        }))))))),
     panel));
   if (selectedName) creatorPanel(panel, selectedName, () => renderCreators(el, selectedName));
 }
@@ -662,6 +667,10 @@ async function creatorPanel(panel, name, after) {
     h('div', { class: 'row' },
       creator.hasAvatar ? h('img', { class: 'avatar', src: `/api/creators/${enc(name)}/avatar?t=${Date.now()}` }) : h('div', { class: 'avatar' }),
       h('div', {}, h('h2', {}, name), creator.links.map((l) => h('a', { href: l.url, target: '_blank', rel: 'noreferrer', class: 'chip on', style: { textDecoration: 'none' } }, l.label)))),
+    h('label', { class: 'check' }, h('input', {
+      type: 'checkbox', checked: creator.isCreator,
+      onchange: async (e) => { if (await run(() => api(`/creators/${enc(name)}/marked`, { method: e.target.checked ? 'PUT' : 'DELETE' }), 'Gespeichert') !== undefined) after(); },
+    }), 'Als Creator anzeigen (Creator-Reihe in der App)'),
     h('h3', {}, 'Links'), links,
     h('button', { class: 'primary', onclick: async () => { if (await run(() => api(`/creators/${enc(name)}`, { method: 'PUT', body: { links: links.value.split('\n') } }), 'Gespeichert') !== undefined) after(); } }, 'Links speichern'),
     h('h3', {}, 'Profilbild'),

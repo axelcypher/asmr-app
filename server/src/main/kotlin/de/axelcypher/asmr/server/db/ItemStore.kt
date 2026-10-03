@@ -202,15 +202,18 @@ class ItemStore(private val db: Database, private val now: () -> Long = System::
     }
 
     /** Creator der sichtbaren Tracks mit Anzahl, meiste zuerst. */
-    suspend fun creators(viewer: Viewer): List<de.axelcypher.asmr.api.CreatorSummaryDto> = db.tx {
+    /** [onlyMarked]: nur als Creator markierte (Übersicht der App); sonst alle Namen (Verwaltung, Filter). */
+    suspend fun creators(viewer: Viewer, onlyMarked: Boolean = false): List<de.axelcypher.asmr.api.CreatorSummaryDto> = db.tx {
         val where = mutableListOf("i.creator IS NOT NULL")
         val args = mutableListOf<Any?>()
         hiddenClause(viewer, where, args)
+        val having = if (onlyMarked) "HAVING MAX(COALESCE(c.is_creator, 0)) = 1" else ""
         query(
-            """SELECT i.creator, COUNT(*) AS n, MAX(c.avatar_path) AS avatar FROM items i $CREATOR_JOIN
-               WHERE ${where.joinToString(" AND ")} GROUP BY i.creator COLLATE NOCASE ORDER BY n DESC, i.creator""",
+            """SELECT i.creator, COUNT(*) AS n, MAX(c.avatar_path) AS avatar, MAX(COALESCE(c.is_creator, 0)) AS marked
+               FROM items i $CREATOR_JOIN WHERE ${where.joinToString(" AND ")}
+               GROUP BY i.creator COLLATE NOCASE $having ORDER BY n DESC, i.creator""",
             *args.toTypedArray(),
-        ) { de.axelcypher.asmr.api.CreatorSummaryDto(it.getString(1), it.getInt(2), it.getString(3) != null) }
+        ) { de.axelcypher.asmr.api.CreatorSummaryDto(it.getString(1), it.getInt(2), it.getString(3) != null, it.getInt(4) == 1) }
     }
 
     /** "Einer von": Track-IDs, Ordner-Bereiche oder eine zusätzliche Bedingung. Leer heißt: nichts. */

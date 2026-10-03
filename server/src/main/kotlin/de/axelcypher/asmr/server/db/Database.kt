@@ -165,6 +165,10 @@ class Database private constructor(private val connection: Connection) {
                 PRIMARY KEY (playlist_id, item_id)
             )
             """,
+            """
+            ALTER TABLE creators ADD COLUMN is_creator INTEGER NOT NULL DEFAULT 0;
+            UPDATE creators SET is_creator = 1 WHERE avatar_path IS NOT NULL OR links <> '[]'
+            """,
         )
     }
 }

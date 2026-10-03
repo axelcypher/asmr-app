@@ -203,6 +203,11 @@ class AsmrClient(engine: HttpClientEngine, private val sessionStore: SessionStor
             setBody(image)
         }.body()
 
+    suspend fun setCreatorMarked(name: String, marked: Boolean): CreatorDto {
+        val url = "${creatorUrl(base(), name)}/marked"
+        return (if (marked) httpClient.put(url) else httpClient.delete(url)).body()
+    }
+
     suspend fun fetchAvatar(name: String): CreatorDto =
         httpClient.post("${creatorUrl(base(), name)}/avatar/fetch").body()
 

@@ -41,7 +41,7 @@ fun Route.homeRoutes(services: Services) {
         val ambientFolders = services.ambientFolders.list()
         call.respond(
             HomeDto(
-                creators = services.items.creators(viewer),
+                creators = services.items.creators(viewer, onlyMarked = true),
                 favorites = services.items.list(viewer, ItemQuery(favoritesOnly = true, pageSize = HOME_ROW)).items
                     .withAmbient(ambientFolders),
                 playlists = playlists(services, viewer),

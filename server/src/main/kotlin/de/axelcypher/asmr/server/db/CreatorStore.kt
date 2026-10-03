@@ -16,6 +16,7 @@ class CreatorStore(private val db: Database) {
                 name = name,
                 links = ApiJson.decodeFromString(STRINGS, it.getString("links")).map(::link),
                 hasAvatar = it.getString("avatar_path") != null,
+                isCreator = it.getInt("is_creator") == 1,
             )
         } ?: CreatorDto(name, emptyList(), hasAvatar = false)
     }
@@ -27,6 +28,11 @@ class CreatorStore(private val db: Database) {
         ensure(name)
         val clean = links.map(String::trim).filter(String::isNotEmpty).distinct()
         update("UPDATE creators SET links = ? WHERE name = ?", ApiJson.encodeToString(STRINGS, clean), name)
+    }
+
+    suspend fun setCreator(name: String, isCreator: Boolean) = db.tx {
+        ensure(name)
+        update("UPDATE creators SET is_creator = ? WHERE name = ?", isCreator, name)
     }
 
     suspend fun setAvatar(name: String, avatarPath: String?) = db.tx {

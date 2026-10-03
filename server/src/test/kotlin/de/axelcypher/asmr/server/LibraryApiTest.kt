@@ -338,6 +338,8 @@ class LibraryApiTest {
         val aliceEdit = client.put("/api/playlists/${playlist.id}/items/$tapping") { bearerAuth(alice) }
         assertEquals(HttpStatusCode.Forbidden, aliceEdit.status)
 
+        // Nur markierte Creator erscheinen in der Übersicht.
+        client.put("/api/creators/Gibi ASMR/marked") { bearerAuth(admin) }
         val adminHome = client.get("/api/home") { bearerAuth(admin) }.body<de.axelcypher.asmr.api.HomeDto>()
         assertEquals(4, adminHome.categories.single().itemCount)
         assertEquals(setOf("birds", "tapping"), adminHome.ambient.map { it.title }.toSet())
@@ -346,7 +348,9 @@ class LibraryApiTest {
 
         val aliceHome = client.get("/api/home") { bearerAuth(alice) }.body<de.axelcypher.asmr.api.HomeDto>()
         assertEquals(3, aliceHome.categories.single().itemCount, "Spicy zählt für Alice nicht mit")
-        assertEquals(setOf("Gibi ASMR", "Natur"), aliceHome.creators.map { it.name }.toSet())
+        assertEquals(listOf("Gibi ASMR"), aliceHome.creators.map { it.name })
+        val all = client.get("/api/creators") { bearerAuth(alice) }.body<List<de.axelcypher.asmr.api.CreatorSummaryDto>>()
+        assertEquals(setOf("Gibi ASMR", "Natur"), all.map { it.name }.toSet(), "Verwaltung und Filter sehen alle Namen")
         assertEquals(1, aliceHome.playlists.single().itemCount)
 
         val inCategory = client.get("/api/items?category=${natur.id}") { bearerAuth(alice) }.body<ItemPage>()
