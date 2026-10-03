@@ -100,6 +100,7 @@ private fun AsmrRoot(container: AppContainer) {
             },
             container.playbackEngine,
             container.sharedUrl,
+            container.asmrClient,
         )
     }
 }

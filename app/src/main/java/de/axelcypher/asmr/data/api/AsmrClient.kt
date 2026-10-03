@@ -2,12 +2,15 @@ package de.axelcypher.asmr.data.api
 
 import de.axelcypher.asmr.api.ApiJson
 import de.axelcypher.asmr.api.AuthConfigDto
+import de.axelcypher.asmr.api.ChangePasswordRequest
+import de.axelcypher.asmr.api.CreateUserRequest
 import de.axelcypher.asmr.api.ImportJobDto
 import de.axelcypher.asmr.api.ImportRequest
 import de.axelcypher.asmr.api.ItemPage
 import de.axelcypher.asmr.api.LoginRequest
 import de.axelcypher.asmr.api.LoginResponse
 import de.axelcypher.asmr.api.SsoExchangeRequest
+import de.axelcypher.asmr.api.UserDto
 import de.axelcypher.asmr.data.settings.Session
 import de.axelcypher.asmr.data.settings.SessionStore
 import io.ktor.client.HttpClient
@@ -19,9 +22,11 @@ import io.ktor.client.plugins.auth.providers.BearerAuthProvider
 import io.ktor.client.plugins.auth.providers.BearerTokens
 import io.ktor.client.plugins.auth.providers.bearer
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.URLBuilder
@@ -105,6 +110,33 @@ class AsmrClient(engine: HttpClientEngine, private val sessionStore: SessionStor
 
     suspend fun imports(): List<ImportJobDto> =
         httpClient.get("${requireSession().serverUrl}/api/imports").body()
+
+    // --- Profil und Verwaltung ---
+
+    suspend fun me(): UserDto = httpClient.get("${requireSession().serverUrl}/api/me").body()
+
+    suspend fun changePassword(currentPassword: String?, newPassword: String) {
+        httpClient.put("${requireSession().serverUrl}/api/me/password") {
+            contentType(ContentType.Application.Json)
+            setBody(ChangePasswordRequest(currentPassword, newPassword))
+        }
+    }
+
+    suspend fun users(): List<UserDto> = httpClient.get("${requireSession().serverUrl}/api/users").body()
+
+    suspend fun createUser(username: String, password: String, isAdmin: Boolean): UserDto =
+        httpClient.post("${requireSession().serverUrl}/api/users") {
+            contentType(ContentType.Application.Json)
+            setBody(CreateUserRequest(username.trim(), password, isAdmin))
+        }.body()
+
+    suspend fun deleteUser(id: Long) {
+        httpClient.delete("${requireSession().serverUrl}/api/users/$id")
+    }
+
+    suspend fun scanLibrary() {
+        httpClient.post("${requireSession().serverUrl}/api/library/scan")
+    }
 
     private fun LoginResponse.toSession(baseUrl: String): Session {
         clearCachedTokens()

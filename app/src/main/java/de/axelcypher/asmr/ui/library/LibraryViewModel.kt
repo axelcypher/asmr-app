@@ -81,10 +81,6 @@ class LibraryViewModel(
         load { loadPage(page = current.items.size / AsmrClient.PAGE_SIZE) }
     }
 
-    fun logout() {
-        viewModelScope.launch { client.logout() }
-    }
-
     // --- Import ---------------------------------------------------------------------------------
 
     fun startImport(url: String) {

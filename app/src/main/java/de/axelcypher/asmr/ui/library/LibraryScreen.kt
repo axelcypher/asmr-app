@@ -49,6 +49,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import de.axelcypher.asmr.api.ItemDto
 import de.axelcypher.asmr.data.api.AsmrClient
@@ -59,11 +60,18 @@ import de.axelcypher.asmr.ui.imports.ImportDialog
 import de.axelcypher.asmr.ui.imports.ImportsSheet
 import de.axelcypher.asmr.ui.player.MiniPlayer
 import de.axelcypher.asmr.ui.player.PlayerScreen
+import de.axelcypher.asmr.ui.profile.ProfileScreen
+import de.axelcypher.asmr.ui.profile.ProfileViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LibraryScreen(viewModel: LibraryViewModel, engine: PlaybackEngine, sharedUrl: MutableStateFlow<String?>) {
+fun LibraryScreen(
+    viewModel: LibraryViewModel,
+    engine: PlaybackEngine,
+    sharedUrl: MutableStateFlow<String?>,
+    client: AsmrClient,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val channel by viewModel.updateChannel.collectAsStateWithLifecycle(initialValue = UpdateChannel.STABLE)
     val shared by sharedUrl.collectAsStateWithLifecycle()
@@ -73,6 +81,7 @@ fun LibraryScreen(viewModel: LibraryViewModel, engine: PlaybackEngine, sharedUrl
     var showPlayer by rememberSaveable { mutableStateOf(false) }
     var showImport by rememberSaveable { mutableStateOf(false) }
     var showImports by rememberSaveable { mutableStateOf(false) }
+    var showProfile by rememberSaveable { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
 
     LaunchedEffect(viewModel) { viewModel.messages.collect { snackbar.showSnackbar(it) } }
@@ -90,6 +99,16 @@ fun LibraryScreen(viewModel: LibraryViewModel, engine: PlaybackEngine, sharedUrl
 
     if (showPlayer) {
         PlayerScreen(engine, state.serverUrl, onClose = { showPlayer = false })
+        return
+    }
+    if (showProfile) {
+        ProfileScreen(
+            viewModel { ProfileViewModel(client) },
+            onClose = {
+                showProfile = false
+                viewModel.reload()
+            },
+        )
         return
     }
 
@@ -120,7 +139,7 @@ fun LibraryScreen(viewModel: LibraryViewModel, engine: PlaybackEngine, sharedUrl
                                 text = { Text("Nach Updates suchen") },
                                 onClick = { menuOpen = false; viewModel.checkForUpdate(manual = true) },
                             )
-                            DropdownMenuItem(text = { Text("Abmelden") }, onClick = { menuOpen = false; viewModel.logout() })
+                            DropdownMenuItem(text = { Text("Profil") }, onClick = { menuOpen = false; showProfile = true })
                         }
                     }
                 },
