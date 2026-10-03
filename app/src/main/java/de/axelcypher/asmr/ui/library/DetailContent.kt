@@ -102,20 +102,26 @@ private fun DetailHeader(detail: Detail, state: LibraryUiState, context: CardCon
             }
 
             is Detail.Category -> Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    AppIcons.category(detail.category.icon), null,
-                    tint = Color.White,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(parseColor(detail.category.color))
-                        .padding(12.dp),
-                )
+                // Aus der Übersicht nachschlagen: nach dem Bearbeiten ist das neue Bild sofort da.
+                val category = state.home?.ambientCategories?.firstOrNull { it.id == detail.category.id } ?: detail.category
+                if (category.isAmbient) {
+                    CategoryImage(category, context, Modifier.size(72.dp))
+                } else {
+                    Icon(
+                        AppIcons.category(category.icon), null,
+                        tint = Color.White,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(parseColor(category.color))
+                            .padding(12.dp),
+                    )
+                }
                 Text(
                     "${state.detailItems.size} Inhalte",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 16.dp).weight(1f),
                 )
-                if (context.isAdmin) OutlinedButton(onClick = { callbacks.onCategoryEdit(detail.category) }) { Text("Bearbeiten") }
+                if (context.isAdmin) OutlinedButton(onClick = { callbacks.onCategoryEdit(category) }) { Text("Bearbeiten") }
             }
 
             is Detail.Playlist -> state.detailPlaylist?.let { playlist ->

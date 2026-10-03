@@ -40,6 +40,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
@@ -60,6 +61,8 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation as ClientContentNegotiation
 
@@ -376,6 +379,17 @@ class LibraryApiTest {
         assertEquals(listOf("Natur"), withAmbient.categories.map { it.name })
         assertEquals(listOf("Regen" to 2), withAmbient.ambientCategories.map { it.name to it.itemCount })
         assertEquals(listOf("Natur & Wetter/Wald"), runBlocking { ambientFolders.list() })
+        assertNull(withAmbient.ambientCategories.single().imageVersion)
+
+        // Eigenes Bild für die Ambiente-Kachel: hochladen, ausliefern, entfernen.
+        assertEquals(HttpStatusCode.NotFound, client.get("/api/categories/${rain.id}/image") { bearerAuth(alice) }.status)
+        assertEquals(HttpStatusCode.Forbidden, client.put("/api/categories/${rain.id}/image") { bearerAuth(alice); setBody(PNG) }.status)
+        assertTrue(client.put("/api/categories/${rain.id}/image") { bearerAuth(admin); setBody(PNG) }.status.isSuccess())
+        val withImage = client.get("/api/home") { bearerAuth(alice) }.body<de.axelcypher.asmr.api.HomeDto>()
+        assertNotNull(withImage.ambientCategories.single().imageVersion)
+        assertEquals(HttpStatusCode.OK, client.get("/api/categories/${rain.id}/image") { bearerAuth(alice) }.status)
+        client.delete("/api/categories/${rain.id}/image") { bearerAuth(admin) }
+        assertEquals(HttpStatusCode.NotFound, client.get("/api/categories/${rain.id}/image") { bearerAuth(alice) }.status)
     }
 
     @Test
@@ -423,12 +437,21 @@ class LibraryApiTest {
 
         val first = categories.create(de.axelcypher.asmr.api.CategoryRequest("Eins", "leaf", "#3B5A4C"))
         val second = categories.create(de.axelcypher.asmr.api.CategoryRequest("Zwei", "leaf", "#3B5A4C"))
+        val third = categories.create(de.axelcypher.asmr.api.CategoryRequest("Drei", "leaf", "#3B5A4C"))
         client.put("/api/categories/order") {
             bearerAuth(token)
             contentType(ContentType.Application.Json)
-            setBody(de.axelcypher.asmr.api.OrderRequest(listOf(second.id, first.id)))
+            setBody(de.axelcypher.asmr.api.OrderRequest(listOf(second.id, first.id, third.id)))
         }
-        assertEquals(listOf("Zwei", "Eins"), runBlocking { categories.list() }.map { it.name })
+        assertEquals(listOf("Zwei", "Eins", "Drei"), runBlocking { categories.list() }.map { it.name })
+
+        // Ambiente und normale Kategorien werden getrennt sortiert: die übrigen behalten ihre Plätze.
+        client.put("/api/categories/order") {
+            bearerAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(de.axelcypher.asmr.api.OrderRequest(listOf(third.id, second.id)))
+        }
+        assertEquals(listOf("Drei", "Eins", "Zwei"), runBlocking { categories.list() }.map { it.name })
     }
 
     @Test

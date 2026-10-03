@@ -269,18 +269,30 @@ class AsmrClient(engine: HttpClientEngine, private val sessionStore: SessionStor
     suspend fun categoryDetail(id: Long): de.axelcypher.asmr.api.CategoryDetailDto =
         httpClient.get("${base()}/api/categories/$id").body()
 
-    suspend fun saveCategory(id: Long?, request: de.axelcypher.asmr.api.CategoryRequest) {
+    /** Legt an oder ändert; liefert die Id (für das Bild direkt nach dem Anlegen). */
+    suspend fun saveCategory(id: Long?, request: de.axelcypher.asmr.api.CategoryRequest): Long {
         if (id == null) {
-            httpClient.post("${base()}/api/categories") {
+            return httpClient.post("${base()}/api/categories") {
                 contentType(ContentType.Application.Json)
                 setBody(request)
-            }
-        } else {
-            httpClient.patch("${base()}/api/categories/$id") {
-                contentType(ContentType.Application.Json)
-                setBody(request)
-            }
+            }.body<de.axelcypher.asmr.api.CategoryDto>().id
         }
+        httpClient.patch("${base()}/api/categories/$id") {
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
+        return id
+    }
+
+    suspend fun uploadCategoryImage(id: Long, image: ByteArray) {
+        httpClient.put("${base()}/api/categories/$id/image") {
+            contentType(ContentType.Application.OctetStream)
+            setBody(image)
+        }
+    }
+
+    suspend fun deleteCategoryImage(id: Long) {
+        httpClient.delete("${base()}/api/categories/$id/image")
     }
 
     suspend fun deleteCategory(id: Long) {
@@ -353,6 +365,8 @@ class AsmrClient(engine: HttpClientEngine, private val sessionStore: SessionStor
         fun creatorUrl(serverUrl: String, name: String) = "$serverUrl/api/creators/${name.encodeURLPathPart()}"
 
         fun avatarUrl(serverUrl: String, name: String) = "${creatorUrl(serverUrl, name)}/avatar"
+
+        fun categoryImageUrl(serverUrl: String, id: Long) = "$serverUrl/api/categories/$id/image"
     }
 }
 

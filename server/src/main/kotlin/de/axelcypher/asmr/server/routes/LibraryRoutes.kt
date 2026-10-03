@@ -154,7 +154,7 @@ fun Route.libraryRoutes(services: Services) {
             call.requireAdmin()
             val name = call.creatorName()
             val bytes = call.receive<ByteArray>()
-            services.creators.setAvatar(name, saveAvatar(services, name, bytes))
+            services.creators.setAvatar(name, saveImage(services, avatarFileName(name), bytes))
             call.respond(services.creators.get(name))
         }
 
@@ -167,7 +167,7 @@ fun Route.libraryRoutes(services: Services) {
             val temp = services.avatarDir.createDirectories().resolve("fetch-${sha256Hex(name).take(12)}.jpg")
             try {
                 services.avatarFetcher.fetch(url, temp)
-                services.creators.setAvatar(name, saveAvatar(services, name, withContext(Dispatchers.IO) { temp.readBytes() }))
+                services.creators.setAvatar(name, saveImage(services, avatarFileName(name), withContext(Dispatchers.IO) { temp.readBytes() }))
             } catch (e: DownloadException) {
                 throw ApiException(HttpStatusCode.BadGateway, e.message ?: "Profilbild nicht gefunden")
             } finally {
@@ -194,8 +194,10 @@ private suspend fun folderCover(services: Services, path: String): String? =
     services.scanner.folderCover(path)
         ?: path.takeIf { it.isNotEmpty() }?.let { services.creators.avatarPath(it.substringAfterLast('/')) }
 
-/** Prüft und verkleinert das Bild, speichert es als JPEG und liefert den gespeicherten Pfad. */
-private suspend fun saveAvatar(services: Services, name: String, bytes: ByteArray): String = withContext(Dispatchers.IO) {
+private fun avatarFileName(name: String) = "${sha256Hex(name.lowercase()).take(24)}.jpg"
+
+/** Prüft und verkleinert das Bild, speichert es als JPEG im Bilderordner und liefert den gespeicherten Pfad. */
+internal suspend fun saveImage(services: Services, fileName: String, bytes: ByteArray): String = withContext(Dispatchers.IO) {
     val image = runCatching { ImageIO.read(ByteArrayInputStream(bytes)) }.getOrNull()
         ?: throw ApiException(HttpStatusCode.BadRequest, "Kein lesbares Bild")
     val scale = minOf(1.0, AVATAR_SIZE.toDouble() / maxOf(image.width, image.height))
@@ -208,7 +210,6 @@ private suspend fun saveAvatar(services: Services, name: String, bytes: ByteArra
         drawImage(image, 0, 0, width, height, java.awt.Color.BLACK, null)
         dispose()
     }
-    val fileName = "${sha256Hex(name.lowercase()).take(24)}.jpg"
     val target: Path = services.avatarDir.createDirectories().resolve(fileName)
     ImageIO.write(rgb, "jpg", target.toFile())
     Services.AVATAR_PREFIX + fileName

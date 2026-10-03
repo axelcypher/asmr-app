@@ -205,7 +205,8 @@ const PAGES = [
   ['dashboard', 'Übersicht', renderDashboard],
   ['tracks', 'Tracks', renderTracks],
   ['folders', 'Ordner', renderFolders],
-  ['categories', 'Kategorien', renderCategories],
+  ['categories', 'Kategorien', (el) => renderCategories(el)],
+  ['ambient', 'Ambiente', (el) => renderCategories(el, undefined, true)],
   ['matrix', 'Bewertungsmatrix', renderMatrix],
   ['creators', 'ASMRtists', renderCreators],
   ['users', 'Benutzer', renderUsers],
@@ -372,6 +373,13 @@ async function categoriesWithMembers() {
   return Promise.all(categories.map(async (c) => ({ ...c, detail: await api(`/categories/${c.id}`) })));
 }
 
+/** Checkbox-Labels getrennt nach normalen Kategorien und Ambiente, je mit eigener Überschrift. */
+function categoryGroups(entries, title = 'Kategorien') {
+  return [[title, entries.filter((e) => !e.c.isAmbient)], ['Ambiente', entries.filter((e) => e.c.isAmbient)]]
+    .filter(([, group]) => group.length > 0)
+    .map(([heading, group]) => h('div', {}, h('h3', {}, heading), h('div', { class: 'stack' }, group.map((e) => e.label))));
+}
+
 async function trackEditor(panel, id, onSaved, onClose) {
   const [item, categories, folders] = await Promise.all([api(`/items/${id}`), categoriesWithMembers(), api('/folders/all')]);
   const title = h('input', { type: 'text', value: item.title, style: { width: '100%' } });
@@ -408,7 +416,7 @@ async function trackEditor(panel, id, onSaved, onClose) {
     h('label', { class: 'muted small' }, 'Titel'), title,
     h('label', { class: 'muted small' }, 'ASMRtist'), creator,
     h('label', { class: 'muted small' }, 'Ordner (verschiebt die Datei auf dem NAS)'), folder,
-    categories.length > 0 && h('div', {}, h('h3', {}, 'Kategorien'), h('div', { class: 'stack' }, categoryBoxes.map((b) => b.label))),
+    categoryGroups(categoryBoxes),
     h('h3', {}, 'Trigger-Matrix'), matrix,
     item.sourceUrl && h('p', { class: 'small' }, 'Quelle: ', h('a', { href: item.sourceUrl, target: '_blank', rel: 'noreferrer' }, item.sourceUrl)),
     h('div', { class: 'row' },
@@ -465,7 +473,10 @@ function bulkActions(ids, after) {
   const level = h('input', { type: 'range', min: 0, max: 10, value: 5, style: { width: '110px' } });
   const levelLabel = h('span', {}, '5');
   level.addEventListener('input', () => { levelLabel.textContent = level.value; });
-  api('/categories').then((cs) => cs.forEach((c) => category.append(h('option', { value: c.id }, c.name))));
+  api('/categories').then((cs) => [['Kategorien', false], ['Ambiente', true]].forEach(([label, ambient]) => {
+    const group = cs.filter((c) => c.isAmbient === ambient);
+    if (group.length) category.append(h('optgroup', { label }, group.map((c) => h('option', { value: c.id }, c.name))));
+  }));
   api('/folders/all').then((fs) => { folder.append(h('option', { value: '' }, 'Bibliothek (oberste Ebene)')); fs.forEach((f) => folder.append(h('option', { value: f }, f))); });
 
   const each = (fn, done) => run(async () => { for (const id of ids) await fn(id); await after(); }, done);
@@ -546,7 +557,10 @@ async function folderPanel(panel, folder, refresh) {
   renderGroups();
   const newGroup = h('input', { type: 'text', placeholder: 'Gruppe hinzufügen', class: 'grow' });
   const inherited = access.rules.filter((r) => folder.path.startsWith(`${r.path}/`));
-  const categoryBoxes = categories.map((c) => ({ c, box: h('input', { type: 'checkbox', checked: c.detail.folders.includes(folder.path) }) }));
+  const categoryBoxes = categories.map((c) => {
+    const box = h('input', { type: 'checkbox', checked: c.detail.folders.includes(folder.path) });
+    return { c, box, label: h('label', { class: 'check' }, box, c.name) };
+  });
 
   const save = async () => {
     if (restricted.checked) {
@@ -564,7 +578,7 @@ async function folderPanel(panel, folder, refresh) {
     h('h2', {}, folder.name),
     h('p', { class: 'muted small' }, folder.path, ` · ${folder.itemCount} Tracks`),
     folder.hasCover && h('img', { src: `/api/folders/cover?path=${enc(folder.path)}`, style: { width: '160px', borderRadius: '10px' } }),
-    categories.length > 0 && h('div', {}, h('h3', {}, 'Kategorien (samt Unterordnern)'), h('div', { class: 'stack' }, categoryBoxes.map(({ c, box }) => h('label', { class: 'check' }, box, c.name)))),
+    categoryGroups(categoryBoxes, 'Kategorien (samt Unterordnern)'),
     h('h3', {}, 'Zugriff'),
     inherited.length > 0 && h('p', { class: 'muted small' }, 'Zusätzlich gelten die Einschränkungen von: ', inherited.map((r) => r.path).join(', ')),
     h('label', { class: 'check' }, restricted, 'Eingeschränkt (Admins sehen immer alles)'),
@@ -584,38 +598,48 @@ async function folderPanel(panel, folder, refresh) {
 // ---------------------------------------------------------------------------------------------
 // Kategorien
 
-async function renderCategories(el, editId) {
-  const categories = await categoriesWithMembers();
+/** Kategorien oder (mit [ambient]) Ambiente-Kategorien: getrennte Listen, eigene Reihenfolge. */
+async function renderCategories(el, editId, ambient = false) {
+  const categories = (await categoriesWithMembers()).filter((c) => c.isAmbient === ambient);
   const panel = h('div', { class: 'panel' });
-  // Reihenfolge wie in der App; ▲/▼ tauscht mit dem Nachbarn.
+  const reload = (id) => renderCategories(el, id, ambient);
+  // Reihenfolge wie in der App; ▲/▼ tauscht mit dem Nachbarn. Die andere Art behält ihre Plätze.
   const move = async (index, delta, event) => {
     event.stopPropagation();
     const ids = categories.map((c) => c.id);
     const target = index + delta;
     if (target < 0 || target >= ids.length) return;
     [ids[index], ids[target]] = [ids[target], ids[index]];
-    if (await run(() => api('/categories/order', { method: 'PUT', body: { ids } })) !== undefined) renderCategories(el, editId);
+    if (await run(() => api('/categories/order', { method: 'PUT', body: { ids } })) !== undefined) reload(editId);
   };
+  const preview = (c) => (ambient && c.imageVersion
+    ? h('img', { class: 'thumb', src: `/api/categories/${c.id}/image?v=${c.imageVersion}` })
+    : h('span', { class: 'icon-btn', style: { background: c.color, borderRadius: '8px', color: '#fff', display: 'inline-grid' } }, icon(c.icon)));
   const list = h('table', {},
     h('thead', {}, h('tr', {}, h('th', {}, 'Reihenfolge'), h('th', {}), h('th', {}, 'Name'), h('th', {}, 'Inhalte'), h('th', {}, 'Ordner'), h('th', {}, 'Einzelne Tracks'))),
-    h('tbody', {}, categories.map((c, index) => h('tr', { class: 'clickable', onclick: () => categoryForm(panel, c, () => renderCategories(el, c.id)) },
+    h('tbody', {}, categories.map((c, index) => h('tr', { class: 'clickable', onclick: () => categoryForm(panel, c, () => reload(c.id), ambient) },
       h('td', {}, h('div', { class: 'row', style: { gap: '4px' } },
         h('button', { disabled: index === 0, title: 'Nach oben', onclick: (e) => move(index, -1, e) }, '▲'),
         h('button', { disabled: index === categories.length - 1, title: 'Nach unten', onclick: (e) => move(index, 1, e) }, '▼'))),
-      h('td', {}, h('span', { class: 'icon-btn', style: { background: c.color, borderRadius: '8px', color: '#fff', display: 'inline-grid' } }, icon(c.icon))),
-      h('td', {}, c.name, c.isAmbient && h('span', { class: 'badge', style: { marginLeft: '6px' } }, 'Ambiente')),
+      h('td', {}, preview(c)),
+      h('td', {}, c.name),
       h('td', { class: 'muted' }, c.itemCount),
       h('td', { class: 'small' }, c.detail.folders.join(', ') || '–'),
       h('td', { class: 'muted' }, c.detail.itemIds.length)))));
+  const empty = ambient
+    ? 'Noch keine Ambiente-Kategorien. Z.B. "Regen" anlegen und unter "Ordner" die passenden Ordner zuordnen.'
+    : 'Noch keine Kategorien.';
   clear(el,
-    h('div', { class: 'row', style: { marginBottom: '12px' } }, h('h1', { class: 'grow' }, 'Kategorien'),
-      h('button', { class: 'primary', onclick: () => categoryForm(panel, null, () => renderCategories(el)) }, 'Neue Kategorie')),
-    h('div', { class: 'split' }, h('div', { class: 'card' }, categories.length ? list : h('p', { class: 'muted' }, 'Noch keine Kategorien.')), panel));
+    h('div', { class: 'row', style: { marginBottom: '12px' } }, h('h1', { class: 'grow' }, ambient ? 'Ambiente' : 'Kategorien'),
+      h('button', { class: 'primary', onclick: () => categoryForm(panel, null, (id) => reload(id), ambient) }, ambient ? 'Neues Ambiente' : 'Neue Kategorie')),
+    ambient && h('p', { class: 'muted small' }, 'Eigene Reihe mit Bildkacheln in der App; ihre Sounds laufen als zweite Spur unter dem Haupttitel. Ohne eigenes Bild zeigt die Kachel das Cover des ersten Sounds.'),
+    h('div', { class: 'split' }, h('div', { class: 'card' }, categories.length ? list : h('p', { class: 'muted' }, empty)), panel));
   const editing = categories.find((c) => c.id === editId);
-  if (editing) categoryForm(panel, editing, () => renderCategories(el, editId));
+  if (editing) categoryForm(panel, editing, () => reload(editId), ambient);
 }
 
-function categoryForm(panel, category, after) {
+/** Formular für eine Kategorie; [after] bekommt die Id der gespeicherten Kategorie. */
+function categoryForm(panel, category, after, ambient = !!category?.isAmbient) {
   const name = h('input', { type: 'text', value: category?.name || '', style: { width: '100%' } });
   let iconKey = category?.icon || state.catalog.categoryIcons[0];
   let color = category?.color || state.catalog.categoryColors[0];
@@ -626,28 +650,46 @@ function categoryForm(panel, category, after) {
     clear(swatches, state.catalog.categoryColors.map((hex) => h('span', { class: `swatch${hex === color ? ' on' : ''}`, style: { background: hex }, onclick: () => { color = hex; render(); } })));
   };
   render();
-  const ambient = h('input', { type: 'checkbox', checked: !!category?.isAmbient });
-  const body = () => ({ name: name.value.trim(), icon: iconKey, color, isAmbient: ambient.checked });
-  const save = () => category
-    ? api(`/categories/${category.id}`, { method: 'PATCH', body: body() })
-    : api('/categories', { method: 'POST', body: body() });
+  const kind = ambient ? 'Ambiente' : 'Kategorie';
+  const file = h('input', { type: 'file', accept: 'image/*' });
+  const body = () => ({ name: name.value.trim(), icon: iconKey, color, isAmbient: ambient });
+  const save = async () => {
+    const id = category
+      ? (await api(`/categories/${category.id}`, { method: 'PATCH', body: body() }), category.id)
+      : (await api('/categories', { method: 'POST', body: body() })).id;
+    if (ambient && file.files[0]) await api(`/categories/${id}/image`, { method: 'PUT', body: file.files[0] });
+    return id;
+  };
 
   clear(panel, h('div', { class: 'card stack' },
-    h('h2', {}, category ? 'Kategorie bearbeiten' : 'Neue Kategorie'),
+    h('h2', {}, category ? `${kind} bearbeiten` : (ambient ? 'Neues Ambiente' : 'Neue Kategorie')),
     h('label', { class: 'muted small' }, 'Name'), name,
-    h('label', { class: 'muted small' }, 'Icon'), icons,
+    ambient && h('div', { class: 'stack' },
+      h('label', { class: 'muted small' }, 'Bild der Kachel (quadratisch zugeschnitten)'),
+      category?.imageVersion && h('img', { class: 'avatar', style: { borderRadius: '12px' }, src: `/api/categories/${category.id}/image?v=${category.imageVersion}` }),
+      h('div', { class: 'row' }, file,
+        category?.imageVersion && h('button', {
+          onclick: async () => { if (await run(() => api(`/categories/${category.id}/image`, { method: 'DELETE' }), 'Bild entfernt') !== undefined) after(category.id); },
+        }, 'Bild entfernen'))),
+    h('label', { class: 'muted small' }, ambient ? 'Icon (ohne Bild und Cover)' : 'Icon'), icons,
     h('label', { class: 'muted small' }, 'Farbe'), swatches,
-    h('label', { class: 'check' }, ambient, 'Ambiente-Kategorie (eigene Reihe in der App, Sounds laufen als zweite Spur)'),
     category && h('div', {}, h('h3', {}, 'Zugeordnete Ordner'),
       category.detail.folders.length === 0 && h('p', { class: 'muted small' }, 'Keine. Ordner ordnest du unter "Ordner" zu, einzelne Tracks unter "Tracks".'),
       category.detail.folders.map((f) => h('div', { class: 'row' }, h('span', { class: 'grow' }, f),
-        h('button', { onclick: async () => { if (await run(() => api(`/categories/${category.id}/folders?path=${enc(f)}`, { method: 'DELETE' }), 'Entfernt') !== undefined) after(); } }, 'Entfernen')))),
+        h('button', { onclick: async () => { if (await run(() => api(`/categories/${category.id}/folders?path=${enc(f)}`, { method: 'DELETE' }), 'Entfernt') !== undefined) after(category.id); } }, 'Entfernen')))),
     h('div', { class: 'row' },
-      h('button', { class: 'primary', onclick: async () => { if (!name.value.trim()) return toast('Name fehlt', true); if (await run(save, 'Gespeichert') !== undefined) after(); } }, 'Speichern'),
+      h('button', {
+        class: 'primary',
+        onclick: async () => {
+          if (!name.value.trim()) return toast('Name fehlt', true);
+          const id = await run(save, 'Gespeichert');
+          if (id !== undefined) after(id);
+        },
+      }, 'Speichern'),
       h('span', { class: 'grow' }),
       category && h('button', {
         class: 'danger',
-        onclick: async () => { if (confirm(`Kategorie "${category.name}" löschen? Tracks bleiben erhalten.`) && await run(() => api(`/categories/${category.id}`, { method: 'DELETE' }), 'Gelöscht') !== undefined) after(); },
+        onclick: async () => { if (confirm(`${kind} "${category.name}" löschen? Tracks bleiben erhalten.`) && await run(() => api(`/categories/${category.id}`, { method: 'DELETE' }), 'Gelöscht') !== undefined) after(); },
       }, 'Löschen')),
   ));
 }

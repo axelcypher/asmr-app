@@ -17,6 +17,7 @@ class CategoryStore(private val db: Database) : FolderPathOwner {
             CategoryDto(
                 it.getLong("id"), it.getString("name"), it.getString("icon"), it.getString("color"),
                 isAmbient = it.getInt("is_ambient") == 1,
+                imageVersion = it.getString("image")?.substringAfterLast('/')?.substringBeforeLast('.'),
             )
         }
     }
@@ -41,10 +42,23 @@ class CategoryStore(private val db: Database) : FolderPathOwner {
 
     suspend fun delete(id: Long) = db.tx { update("DELETE FROM categories WHERE id = ?", id) }
 
-    /** Neue Reihenfolge; nicht genannte Kategorien rutschen ans Ende. */
+    /** Gespeicherter Pfad des eigenen Bildes (siehe [de.axelcypher.asmr.server.Services.storedFile]). */
+    suspend fun imagePath(id: Long): String? = db.tx {
+        queryOne("SELECT image FROM categories WHERE id = ?", id) { it.getString(1) }
+    }
+
+    suspend fun setImage(id: Long, path: String?) = db.tx { update("UPDATE categories SET image = ? WHERE id = ?", path, id) }
+
+    /**
+     * Neue Reihenfolge der genannten Kategorien. Sie übernehmen die Plätze, die sie bisher belegt haben;
+     * alle anderen (z.B. die jeweils andere Art, Ambiente oder normal) bleiben, wo sie sind.
+     */
     suspend fun reorder(ids: List<Long>) = db.tx {
-        ids.forEachIndexed { index, id -> update("UPDATE categories SET position = ? WHERE id = ?", index, id) }
-        update("UPDATE categories SET position = ? WHERE id NOT IN (${ids.joinToString { "?" }.ifEmpty { "NULL" }})", ids.size, *ids.toTypedArray())
+        val current = query("SELECT id FROM categories ORDER BY position, name COLLATE NOCASE") { it.getLong(1) }
+        val wanted = ids.filter { it in current }.distinct()
+        val queue = ArrayDeque(wanted)
+        current.map { if (it in wanted) queue.removeFirst() else it }
+            .forEachIndexed { index, id -> update("UPDATE categories SET position = ? WHERE id = ?", index, id) }
     }
 
     suspend fun members(id: Long): CategoryMembers = db.tx {

@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -29,9 +31,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import de.axelcypher.asmr.api.CategoryDto
 import de.axelcypher.asmr.api.HomeDto
 import de.axelcypher.asmr.api.ItemDto
@@ -48,7 +52,8 @@ class HomeCallbacks(
     val onSeeAll: (Detail) -> Unit,
     val onPlaylist: (PlaylistDto) -> Unit,
     val onCategory: (CategoryDto) -> Unit,
-    val onCategoryEdit: (CategoryDto?) -> Unit,
+    val onCategoryEdit: (CategoryDto) -> Unit,
+    val onNewCategory: (ambient: Boolean) -> Unit,
 )
 
 @Composable
@@ -109,16 +114,18 @@ fun HomeContent(home: HomeDto?, context: CardContext, callbacks: HomeCallbacks, 
             }
         }
 
-        // Ambiente: Kategorien mit Schalter "Ambiente" (Regen, Rauschen, …), keine einzelnen Tracks.
+        // Ambiente: eigene Kategorien (Regen, Rauschen, …) mit Bild; ihre Sounds werden zur zweiten Spur.
         if (home.ambientCategories.isNotEmpty() || context.isAdmin) {
-            item { SectionTitle("Ambiente", action = null) }
+            item {
+                SectionTitle("Ambiente", action = if (context.isAdmin) "+ Neu" else null) { callbacks.onNewCategory(true) }
+            }
             item {
                 if (home.ambientCategories.isEmpty()) {
-                    EmptyHint("Kategorie mit Schalter \"Ambiente\" anlegen, z.B. \"Regen\" mit den passenden Ordnern.")
+                    EmptyHint("\"+ Neu\" legt eine Ambiente-Kategorie an, z.B. \"Regen\" mit den passenden Ordnern.")
                 } else {
-                    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         items(home.ambientCategories, key = { it.id }) { category ->
-                            CategoryTile(category, context.isAdmin, callbacks, Modifier.width(150.dp))
+                            AmbientTile(category, context, callbacks, Modifier.width(120.dp))
                         }
                     }
                 }
@@ -126,7 +133,7 @@ fun HomeContent(home: HomeDto?, context: CardContext, callbacks: HomeCallbacks, 
         }
 
         item {
-            SectionTitle("Kategorien", action = if (context.isAdmin) "+ Neu" else null) { callbacks.onCategoryEdit(null) }
+            SectionTitle("Kategorien", action = if (context.isAdmin) "+ Neu" else null) { callbacks.onNewCategory(false) }
         }
         item {
             if (home.categories.isEmpty()) {
@@ -251,6 +258,45 @@ private fun CategoryTile(category: CategoryDto, isAdmin: Boolean, callbacks: Hom
         Column(Modifier.padding(start = 8.dp)) {
             Text(category.name, style = MaterialTheme.typography.labelLarge, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${category.itemCount}", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.7f), maxLines = 1)
+        }
+    }
+}
+
+/** Bild einer Ambiente-Kategorie: eigenes Bild, sonst Cover des ersten Sounds, sonst null. */
+fun CategoryDto.imageUrl(context: CardContext): String? = when {
+    imageVersion != null -> "${AsmrClient.categoryImageUrl(context.serverUrl, id)}?v=$imageVersion"
+    coverItemId != null -> "${AsmrClient.coverUrl(context.serverUrl, coverItemId!!)}?v=${context.imageVersion}"
+    else -> null
+}
+
+/** Quadratische Ambiente-Kachel mit Bild (Farbe und Icon als Platzhalter), Name darunter. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun AmbientTile(category: CategoryDto, context: CardContext, callbacks: HomeCallbacks, modifier: Modifier = Modifier) {
+    Column(
+        modifier.combinedClickable(
+            onClick = { callbacks.onCategory(category) },
+            onLongClick = { if (context.isAdmin) callbacks.onCategoryEdit(category) },
+        ),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        CategoryImage(category, context, Modifier.fillMaxWidth())
+        Text(category.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+fun CategoryImage(category: CategoryDto, context: CardContext, modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(10.dp))
+            .background(parseColor(category.color)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(AppIcons.category(category.icon), null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(36.dp))
+        category.imageUrl(context)?.let {
+            AsyncImage(model = it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         }
     }
 }

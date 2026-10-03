@@ -1,8 +1,12 @@
 package de.axelcypher.asmr.ui.library
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
@@ -27,13 +32,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import de.axelcypher.asmr.api.AccessOverviewDto
+import coil3.compose.AsyncImage
 import de.axelcypher.asmr.api.ItemDto
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun NewFolderDialog(parent: String, onCreate: (String) -> Unit, onDismiss: () -> Unit) {
@@ -221,31 +234,78 @@ fun AddToPlaylistDialog(
     )
 }
 
-/** Kategorie anlegen ([existing] null) oder bearbeiten, mit Icon- und Farbwahl. */
+/** Was mit dem Bild einer Ambiente-Kategorie passieren soll. */
+sealed interface ImageChange {
+    class Replace(val bytes: ByteArray) : ImageChange
+    data object Remove : ImageChange
+}
+
+/**
+ * Kategorie anlegen ([existing] null) oder bearbeiten, mit Icon- und Farbwahl. Ambiente-Kategorien
+ * ([ambient], fest je nach Ort des Anlegens) bekommen zusätzlich ein eigenes Bild für ihre Kachel.
+ */
 @Composable
 fun CategoryDialog(
     existing: de.axelcypher.asmr.api.CategoryDto?,
-    onSave: (de.axelcypher.asmr.api.CategoryRequest) -> Unit,
+    ambient: Boolean,
+    imageUrl: String?,
+    onSave: (de.axelcypher.asmr.api.CategoryRequest, ImageChange?) -> Unit,
     onDelete: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var name by remember { mutableStateOf(existing?.name.orEmpty()) }
     var icon by remember { mutableStateOf(existing?.icon ?: de.axelcypher.asmr.api.CATEGORY_ICONS.first()) }
     var color by remember { mutableStateOf(existing?.color ?: de.axelcypher.asmr.api.CATEGORY_COLORS.first()) }
-    var ambient by remember { mutableStateOf(existing?.isAmbient ?: false) }
+    var image by remember { mutableStateOf<ImageChange?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
+    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) scope.launch {
+            val bytes = withContext(Dispatchers.IO) {
+                runCatching { context.contentResolver.openInputStream(uri)!!.use { it.readBytes() } }.getOrNull()
+            }
+            if (bytes != null) image = ImageChange.Replace(bytes)
+        }
+    }
+    val kind = if (ambient) "Ambiente" else "Kategorie"
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (existing == null) "Neue Kategorie" else "Kategorie bearbeiten") },
+        title = { Text(if (existing == null) "Neue${if (ambient) "s" else ""} $kind" else "$kind bearbeiten") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Ambiente-Kategorie")
-                        Text("Erscheint in der Ambiente-Reihe; Sounds werden zur zweiten Spur", style = MaterialTheme.typography.bodySmall)
+                if (ambient) {
+                    val preview: Any? = when (val change = image) {
+                        is ImageChange.Replace -> change.bytes
+                        ImageChange.Remove -> null
+                        null -> imageUrl
                     }
-                    Switch(checked = ambient, onCheckedChange = { ambient = it })
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Box(
+                            Modifier
+                                .size(72.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(parseColor(color)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            androidx.compose.material3.Icon(de.axelcypher.asmr.ui.AppIcons.category(icon), null, tint = Color.White)
+                            if (preview != null) {
+                                AsyncImage(model = preview, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(72.dp))
+                            }
+                        }
+                        Column {
+                            TextButton(onClick = {
+                                pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            }) { Text("Bild wählen") }
+                            if (preview != null) TextButton(onClick = { image = ImageChange.Remove }) { Text("Bild entfernen") }
+                        }
+                    }
+                    Text(
+                        "Ohne eigenes Bild zeigt die Kachel das Cover des ersten Sounds, sonst Icon und Farbe.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 Text("Icon", style = MaterialTheme.typography.titleSmall)
                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -275,14 +335,14 @@ fun CategoryDialog(
                 }
                 if (existing != null) {
                     TextButton(onClick = { if (confirmDelete) onDelete() else confirmDelete = true }) {
-                        Text(if (confirmDelete) "Wirklich löschen?" else "Kategorie löschen", color = MaterialTheme.colorScheme.error)
+                        Text(if (confirmDelete) "Wirklich löschen?" else "$kind löschen", color = MaterialTheme.colorScheme.error)
                     }
                 }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onSave(de.axelcypher.asmr.api.CategoryRequest(name.trim(), icon, color, ambient)) },
+                onClick = { onSave(de.axelcypher.asmr.api.CategoryRequest(name.trim(), icon, color, ambient), image) },
                 enabled = name.isNotBlank(),
             ) { Text("Speichern") }
         },
@@ -304,11 +364,20 @@ fun MembershipDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 if (categories.isEmpty()) Text("Noch keine Kategorien. Auf der Übersicht unter \"Kategorien\" anlegen.")
-                categories.forEach { category ->
-                    CheckRow(category.name, checked = category.id in selected) { checked ->
-                        if (checked) selected.add(category.id) else selected.remove(category.id)
+                val (ambient, normal) = categories.partition { it.isAmbient }
+                listOf("Kategorien" to normal, "Ambiente" to ambient).filter { it.second.isNotEmpty() }.forEach { (heading, group) ->
+                    Text(
+                        heading,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                    group.forEach { category ->
+                        CheckRow(category.name, checked = category.id in selected) { checked ->
+                            if (checked) selected.add(category.id) else selected.remove(category.id)
+                        }
                     }
                 }
             }

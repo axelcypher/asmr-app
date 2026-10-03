@@ -184,6 +184,10 @@ data class CategoryDto(
     val itemCount: Int = 0,
     /** Ambiente-Kategorie: erscheint in der Ambiente-Reihe, ihre Sounds werden zur zweiten Spur. */
     val isAmbient: Boolean = false,
+    /** Gesetzt, wenn die Kategorie ein eigenes Bild hat; ändert sich mit jedem neuen Bild (Cache). */
+    val imageVersion: String? = null,
+    /** Ersatzbild ohne eigenes Bild: Cover des ersten Tracks darin (nur Ambiente). */
+    val coverItemId: Long? = null,
 )
 
 @Serializable

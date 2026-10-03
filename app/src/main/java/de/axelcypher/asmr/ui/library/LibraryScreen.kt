@@ -89,7 +89,7 @@ private sealed interface LibraryDialog {
     data class Access(val folder: FolderDto) : LibraryDialog
     data class Creator(val name: String) : LibraryDialog
     data class AddToPlaylist(val item: ItemDto) : LibraryDialog
-    data class CategoryEdit(val category: CategoryDto?) : LibraryDialog
+    data class CategoryEdit(val category: CategoryDto?, val ambient: Boolean = category?.isAmbient == true) : LibraryDialog
     data class Membership(val title: String, val itemId: Long?, val folder: String?) : LibraryDialog
     data class RenamePlaylist(val playlist: PlaylistDto) : LibraryDialog
     data class DeletePlaylist(val playlist: PlaylistDto) : LibraryDialog
@@ -338,6 +338,7 @@ fun LibraryScreen(
                                 onPlaylist = { viewModel.openDetail(Detail.Playlist(it.id)) },
                                 onCategory = { viewModel.openDetail(Detail.Category(it)) },
                                 onCategoryEdit = { dialog = LibraryDialog.CategoryEdit(it) },
+                                onNewCategory = { ambient -> dialog = LibraryDialog.CategoryEdit(null, ambient) },
                             ),
                             footer = { SubtleLink("Ordneransicht") { folderView = true } },
                         )
@@ -471,8 +472,12 @@ private fun LibraryDialogs(
         )
         is LibraryDialog.CategoryEdit -> CategoryDialog(
             existing = dialog.category,
-            onSave = {
-                viewModel.saveCategory(dialog.category?.id, it)
+            ambient = dialog.ambient,
+            imageUrl = dialog.category?.let { category ->
+                category.imageVersion?.let { "${AsmrClient.categoryImageUrl(state.serverUrl, category.id)}?v=$it" }
+            },
+            onSave = { request, image ->
+                viewModel.saveCategory(dialog.category?.id, request, image)
                 onClose()
             },
             onDelete = {

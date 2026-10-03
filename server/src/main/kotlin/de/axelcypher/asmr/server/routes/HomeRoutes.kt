@@ -24,6 +24,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondFile
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
@@ -31,6 +32,8 @@ import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import io.ktor.server.routing.route
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private const val HOME_ROW = 12
 
@@ -104,7 +107,34 @@ fun Route.homeRoutes(services: Services) {
 
             delete {
                 call.requireAdmin()
-                services.categories.delete(call.longParameter("id"))
+                val id = call.longParameter("id")
+                services.categories.imagePath(id)?.let { deleteStored(services, it) }
+                services.categories.delete(id)
+                call.respond(HttpStatusCode.NoContent)
+            }
+
+            // Eigenes Bild (vor allem für Ambiente-Kacheln); ohne Bild nimmt die App das Cover des ersten Tracks.
+            get("/image") {
+                val path = services.categories.imagePath(call.longParameter("id")) ?: notFound()
+                call.respondFile(services.storedFile(path))
+            }
+
+            put("/image") {
+                call.requireAdmin()
+                val id = call.longParameter("id")
+                services.categories.get(id) ?: notFound()
+                val old = services.categories.imagePath(id)
+                val stored = saveImage(services, "category-$id-${System.currentTimeMillis()}.jpg", call.receive<ByteArray>())
+                services.categories.setImage(id, stored)
+                old?.let { deleteStored(services, it) }
+                call.respond(HttpStatusCode.NoContent)
+            }
+
+            delete("/image") {
+                call.requireAdmin()
+                val id = call.longParameter("id")
+                services.categories.imagePath(id)?.let { deleteStored(services, it) }
+                services.categories.setImage(id, null)
                 call.respond(HttpStatusCode.NoContent)
             }
 
@@ -174,8 +204,17 @@ fun List<ItemDto>.withAmbient(folders: List<String>): List<ItemDto> = map { item
 private suspend fun categories(services: Services, viewer: Viewer): List<CategoryDto> =
     services.categories.list().map { category ->
         val members = services.categories.members(category.id)
-        category.copy(itemCount = services.items.list(viewer, ItemQuery(category = members, pageSize = 1)).total)
+        // Ambiente-Kacheln sind Bilder: ohne eigenes Bild das erste Track-Cover als Ersatz.
+        val page = services.items.list(viewer, ItemQuery(category = members, pageSize = if (category.isAmbient) HOME_ROW else 1))
+        category.copy(
+            itemCount = page.total,
+            coverItemId = if (category.isAmbient) page.items.firstOrNull { it.hasCover }?.id else null,
+        )
     }
+
+private suspend fun deleteStored(services: Services, path: String) = withContext(Dispatchers.IO) {
+    runCatching { services.storedFile(path).delete() }
+}
 
 private suspend fun playlists(services: Services, viewer: Viewer): List<PlaylistDto> =
     services.playlists.visibleTo(viewer.userId).map { playlistDetail(services, viewer, it).playlist }

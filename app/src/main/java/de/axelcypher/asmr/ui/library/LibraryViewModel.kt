@@ -270,10 +270,16 @@ class LibraryViewModel(
 
     // --- Kategorien (Admin) ---------------------------------------------------------------------
 
-    fun saveCategory(id: Long?, request: CategoryRequest) = action(if (id == null) "Kategorie angelegt" else "Gespeichert") {
-        client.saveCategory(id, request)
-        loadHome()
-    }
+    fun saveCategory(id: Long?, request: CategoryRequest, image: ImageChange?) =
+        action(if (id == null) "Angelegt" else "Gespeichert") {
+            val saved = client.saveCategory(id, request)
+            when (image) {
+                is ImageChange.Replace -> client.uploadCategoryImage(saved, image.bytes)
+                ImageChange.Remove -> client.deleteCategoryImage(saved)
+                null -> Unit
+            }
+            loadHome()
+        }
 
     fun deleteCategory(id: Long) = action("Kategorie gelöscht") {
         client.deleteCategory(id)
