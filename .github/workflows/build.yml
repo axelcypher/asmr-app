@@ -10,9 +10,16 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # Fortlaufend, damit der Auto-Update-Kanal der App Versionen vergleichen kann.
+      ASMR_VERSION_CODE: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v7
 
@@ -22,6 +29,14 @@ jobs:
           java-version: 17
 
       - uses: gradle/actions/setup-gradle@v6
+
+      - name: Versionsname
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "ASMR_VERSION_NAME=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else
+            echo "ASMR_VERSION_NAME=nightly-${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+          fi
 
       - name: Keystore aus Secret wiederherstellen
         env:
@@ -36,15 +51,31 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew testDebugUnitTest assembleRelease
+        run: |
+          ./gradlew testDebugUnitTest assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk "asmr-player-${ASMR_VERSION_CODE}.apk"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: asmr-app-release
-          path: app/build/outputs/apk/release/*.apk
+          name: asmr-player-${{ env.ASMR_VERSION_CODE }}
+          path: asmr-player-*.apk
 
-      - name: GitHub-Release für Tag
+      # Kanal "Stabil": ein Release pro Tag.
+      - name: Release für Tag
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" app/build/outputs/apk/release/*.apk --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" asmr-player-*.apk --generate-notes
+
+      # Kanal "Nightly": ein einziges Vorab-Release, das jeder Push auf main ersetzt.
+      - name: Nightly-Release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete nightly --cleanup-tag --yes || true
+          gh release create nightly asmr-player-*.apk \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "Nightly ${ASMR_VERSION_NAME}" \
+            --notes "Automatischer Build von ${GITHUB_SHA::7} auf main."

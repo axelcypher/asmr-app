@@ -100,14 +100,17 @@ Resource Sync auf `vm-docker-01`. Dafür braucht das Repo das Secret `GITOPS_DEP
 - Automatischer Download von Favoriten (nur WLAN)
 - Speicherlimit und Auto-Cleanup
 
-**Später:** zweite Spur als Ambient-Layer (Regen, Rauschen) mit eigener Lautstärke
+### Zweite Spur (Ambient) ✔
+
+- Beliebiges Item der Bibliothek als Ambient-Spur (lange antippen), läuft im Loop mit eigener
+  Lautstärke, folgt Play/Pause und wird vom Sleep-Timer mit ausgeblendet
 
 ## MVP
 
 1. Login + Bibliothek anzeigen ✔
-2. Streaming mit Media3 inkl. Lockscreen
-3. Sleep-Timer mit Fade-Out
-4. Loop + Shuffle
+2. Streaming mit Media3 inkl. Lockscreen ✔
+3. Sleep-Timer mit Fade-Out ✔
+4. Loop + Shuffle ✔
 5. Tag-Filter
 6. Offline-Downloads
 
@@ -133,6 +136,16 @@ ASMR_DATA_DIR=./tmp/data ASMR_MEDIA_DIR=./tmp/media ./gradlew :server:run
   automatisch.
 - GitHub Actions nutzt die Repo-Secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
   `ANDROID_KEY_ALIAS` und `ANDROID_KEY_PASSWORD`.
-- Jeder Push auf `main` baut ein signiertes APK als Artefakt; ein Tag `v*` erzeugt zusätzlich
-  ein GitHub-Release.
+- Jeder Push auf `main` baut ein signiertes APK (Artefakt und Nightly-Release); ein Tag `v*` erzeugt
+  ein stabiles GitHub-Release.
 - Den Keystore sicher sichern: ohne ihn lassen sich installierte Versionen nicht mehr updaten.
+
+### Auto-Update
+
+Die App prüft beim Start die GitHub-Releases (Kanal im Menü wählbar):
+
+- **Stabil:** Releases aus Tags `v*`
+- **Nightly:** Vorab-Release `nightly`, das jeder Push auf `main` ersetzt
+
+Die CI setzt `versionCode` auf die Run-Nummer und benennt das APK `asmr-player-<versionCode>.apk`;
+die App vergleicht diese Nummer mit der eigenen.

@@ -2,6 +2,8 @@ package de.axelcypher.asmr.data.api
 
 import de.axelcypher.asmr.api.ApiJson
 import de.axelcypher.asmr.api.AuthConfigDto
+import de.axelcypher.asmr.api.ImportJobDto
+import de.axelcypher.asmr.api.ImportRequest
 import de.axelcypher.asmr.api.ItemPage
 import de.axelcypher.asmr.api.LoginRequest
 import de.axelcypher.asmr.api.LoginResponse
@@ -95,6 +97,15 @@ class AsmrClient(engine: HttpClientEngine, private val sessionStore: SessionStor
             parameter("pageSize", pageSize)
         }.body()
 
+    suspend fun startImport(url: String): ImportJobDto =
+        httpClient.post("${requireSession().serverUrl}/api/imports") {
+            contentType(ContentType.Application.Json)
+            setBody(ImportRequest(url.trim()))
+        }.body()
+
+    suspend fun imports(): List<ImportJobDto> =
+        httpClient.get("${requireSession().serverUrl}/api/imports").body()
+
     private fun LoginResponse.toSession(baseUrl: String): Session {
         clearCachedTokens()
         return Session(baseUrl, user.username, token)
@@ -111,6 +122,8 @@ class AsmrClient(engine: HttpClientEngine, private val sessionStore: SessionStor
         const val PAGE_SIZE = 60
 
         fun coverUrl(serverUrl: String, itemId: Long) = "$serverUrl/api/items/$itemId/cover"
+
+        fun audioUrl(serverUrl: String, itemId: Long) = "$serverUrl/api/items/$itemId/audio"
     }
 }
 

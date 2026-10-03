@@ -3,6 +3,7 @@ package de.axelcypher.asmr
 import de.axelcypher.asmr.data.api.Pkce
 import de.axelcypher.asmr.data.api.normalizeServerUrl
 import de.axelcypher.asmr.ui.formatDuration
+import de.axelcypher.asmr.ui.imports.extractUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Test
@@ -20,6 +21,15 @@ class AppUnitTest {
         assertEquals("0:59", formatDuration(59.9))
         assertEquals("12:34", formatDuration(754.0))
         assertEquals("1:06:40", formatDuration(4000.0))
+    }
+
+    @Test
+    fun `url aus geteiltem text`() {
+        assertEquals(
+            "https://youtu.be/abc123?si=xyz",
+            extractUrl("Schau dir das an: https://youtu.be/abc123?si=xyz"),
+        )
+        assertEquals("youtube.com/watch?v=1", extractUrl("  youtube.com/watch?v=1 "))
     }
 
     @Test

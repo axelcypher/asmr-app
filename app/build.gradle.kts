@@ -14,8 +14,9 @@ android {
         applicationId = "de.axelcypher.asmr"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        // In CI fortlaufend (Run-Nummer), damit der Auto-Update-Kanal Versionen vergleichen kann.
+        versionCode = System.getenv("ASMR_VERSION_CODE")?.toInt() ?: 1
+        versionName = System.getenv("ASMR_VERSION_NAME") ?: "0.1.0-dev"
     }
 
     // Release-Signatur: in CI Ã¼ber Umgebungsvariablen (siehe .github/workflows), lokal Ã¼ber
@@ -39,7 +40,8 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.findByName("release")
-            isMinifyEnabled = true
+            // Erst wieder einschalten, wenn R8-Regeln für Ktor/Serialization auf einem Gerät geprüft sind.
+            isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -51,6 +53,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -62,6 +65,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.session)
+    implementation(libs.media3.datasource)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
