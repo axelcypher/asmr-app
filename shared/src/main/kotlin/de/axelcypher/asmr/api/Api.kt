@@ -235,7 +235,13 @@ val CATEGORY_ICONS = listOf(
 )
 
 /** Gedämpfte Farben passend zum Nachtdesign. */
-val CATEGORY_COLORS = listOf("#2F4A48", "#3B5A4C", "#3E4650", "#5A5636", "#4A3B5A", "#5A3B42", "#36485A", "#4F4A40")
+val CATEGORY_COLORS = listOf(
+    // Gedeckt (ursprüngliche Auswahl)
+    "#2F4A48", "#3B5A4C", "#3E4650", "#5A5636", "#4A3B5A", "#5A3B42", "#36485A", "#4F4A40",
+    // Kräftiger, aber dunkel genug für weiße Schrift
+    "#1F5F5B", "#2E6B3F", "#56702A", "#7A6420", "#8A5A1E", "#8C3F2B", "#8A2F45", "#7A2F6B",
+    "#5B3A8C", "#3A4A9A", "#1F5A8A", "#1C6E7A", "#4A5560", "#6B4E3A", "#3A3A3A", "#24303F",
+)
 
 /** Admin ändert ein Konto; nur gesetzte Felder werden geändert. */
 @Serializable
