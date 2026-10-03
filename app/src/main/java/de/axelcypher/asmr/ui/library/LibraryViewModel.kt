@@ -14,6 +14,7 @@ import de.axelcypher.asmr.data.api.AsmrClient
 import de.axelcypher.asmr.data.settings.PlaybackSettings
 import de.axelcypher.asmr.data.settings.SessionStore
 import de.axelcypher.asmr.data.settings.UpdateChannel
+import de.axelcypher.asmr.playback.OfflineStore
 import de.axelcypher.asmr.update.AppUpdate
 import de.axelcypher.asmr.update.AppUpdater
 import io.ktor.client.plugins.ClientRequestException
@@ -47,6 +48,8 @@ data class LibraryUiState(
     val allFolders: List<String> = emptyList(),
     /** Zählt hoch, wenn sich Bilder geändert haben; hängt als Parameter an Cover-URLs. */
     val imageVersion: Int = 0,
+    /** Server nicht erreichbar: die Oberfläche bietet die heruntergeladenen Tracks an. */
+    val offline: Boolean = false,
 ) {
     val runningImports get() = imports.count { it.status == ImportStatus.QUEUED || it.status == ImportStatus.RUNNING }
     val breadcrumbs: List<String> get() = if (path.isEmpty()) emptyList() else path.split('/')
@@ -57,6 +60,7 @@ class LibraryViewModel(
     private val sessionStore: SessionStore,
     private val settings: PlaybackSettings,
     private val updater: AppUpdater,
+    private val offlineStore: OfflineStore,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(LibraryUiState())
@@ -80,7 +84,6 @@ class LibraryViewModel(
         viewModelScope.launch {
             val session = sessionStore.current() ?: return@launch
             _state.update { it.copy(serverUrl = session.serverUrl) }
-            runCatching { client.me() }.getOrNull()?.let { me -> _state.update { it.copy(isAdmin = me.isAdmin) } }
         }
         open("")
         refreshImports()
@@ -95,11 +98,16 @@ class LibraryViewModel(
         loadJob = viewModelScope.launch {
             try {
                 val listing = client.folder(path)
-                _state.update { it.copy(folders = listing.folders, items = listing.items, isLoading = false) }
+                _state.update { it.copy(folders = listing.folders, items = listing.items, isLoading = false, offline = false) }
+                // Rolle bei jedem Laden auffrischen: ein einzelner Fehlschlag (Server-Neustart, Funkloch)
+                // darf die Admin-Funktionen nicht bis zum App-Neustart abschalten.
+                runCatching { client.me() }.getOrNull()?.let { me -> _state.update { it.copy(isAdmin = me.isAdmin) } }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _state.update { it.copy(isLoading = false, error = e.message ?: "Laden fehlgeschlagen") }
+                _state.update {
+                    it.copy(isLoading = false, error = e.message ?: "Laden fehlgeschlagen", offline = e is java.io.IOException)
+                }
             }
         }
     }
@@ -149,6 +157,25 @@ class LibraryViewModel(
         }
 
     fun imagesChanged() = _state.update { it.copy(imageVersion = it.imageVersion + 1) }
+
+    // --- Offline --------------------------------------------------------------------------------
+
+    fun download(item: ItemDto) = action("Download gestartet") { offlineStore.download(item, _state.value.serverUrl) }
+
+    fun removeDownload(item: ItemDto) = action("Download entfernt") { offlineStore.remove(item.id) }
+
+    /** Lädt alle Tracks eines Ordners samt Unterordnern herunter. */
+    fun downloadFolder(path: String) = action(null) {
+        var count = 0
+        val pending = ArrayDeque(listOf(path))
+        while (pending.isNotEmpty()) {
+            val listing = client.folder(pending.removeFirst())
+            listing.items.forEach { offlineStore.download(it, _state.value.serverUrl) }
+            count += listing.items.size
+            pending += listing.folders.map { it.path }
+        }
+        messageChannel.send("$count Tracks werden heruntergeladen")
+    }
 
     // --- Import ---------------------------------------------------------------------------------
 

@@ -9,7 +9,9 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.common.PlaybackException
+import androidx.media3.datasource.DataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import de.axelcypher.asmr.api.ItemDto
@@ -55,29 +57,61 @@ class PlaybackEngine(
     context: Context,
     private val sessionStore: SessionStore,
     val settings: PlaybackSettings,
+    /** Liest heruntergeladene Tracks lokal, alles andere vom Server (mit Session-Token). */
+    val dataSourceFactory: DataSource.Factory,
 ) {
     private val scope: CoroutineScope = MainScope()
 
-    /** Hängt das Session-Token an Audio- und Cover-Requests. */
-    val dataSourceFactory: DefaultHttpDataSource.Factory = DefaultHttpDataSource.Factory()
-        .setAllowCrossProtocolRedirects(true)
+    val mainPlayer: ExoPlayer = buildPlayer(context, handleAudioFocus = true)
+        .apply { setHandleAudioBecomingNoisy(true) }
 
-    val mainPlayer: ExoPlayer = ExoPlayer.Builder(context)
-        .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
-        .setAudioAttributes(audioAttributes(), /* handleAudioFocus = */ true)
-        .setHandleAudioBecomingNoisy(true)
+    // Kein eigener Audio-Fokus, sonst würden sich die beiden Player gegenseitig pausieren.
+    private val ambientPlayer: ExoPlayer = buildPlayer(context, handleAudioFocus = false)
+        .apply { repeatMode = Player.REPEAT_MODE_ONE }
+
+    /**
+     * Großer Puffer (Audio ist klein) überbrückt WLAN-Löcher; die Retry-Policy gibt bei Netzwerkfehlern
+     * nicht auf, und [recoverOnError] startet nach einem Fehler trotzdem an derselben Stelle neu.
+     */
+    private fun buildPlayer(context: Context, handleAudioFocus: Boolean): ExoPlayer = ExoPlayer.Builder(context)
+        .setMediaSourceFactory(
+            DefaultMediaSourceFactory(dataSourceFactory).setLoadErrorHandlingPolicy(PatientLoadErrorPolicy()),
+        )
+        .setLoadControl(
+            DefaultLoadControl.Builder()
+                .setBufferDurationsMs(MIN_BUFFER_MS, MAX_BUFFER_MS, 2_500, 5_000)
+                .setTargetBufferBytes(TARGET_BUFFER_BYTES)
+                .setPrioritizeTimeOverSizeThresholds(true)
+                .build(),
+        )
+        .setAudioAttributes(audioAttributes(), handleAudioFocus)
         .setWakeMode(C.WAKE_MODE_NETWORK)
         .setSeekBackIncrementMs(SEEK_STEP_MS)
         .setSeekForwardIncrementMs(SEEK_STEP_MS)
         .build()
+        .also(::recoverOnError)
 
-    // Kein eigener Audio-Fokus, sonst würden sich die beiden Player gegenseitig pausieren.
-    private val ambientPlayer: ExoPlayer = ExoPlayer.Builder(context)
-        .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
-        .setAudioAttributes(audioAttributes(), /* handleAudioFocus = */ false)
-        .setWakeMode(C.WAKE_MODE_NETWORK)
-        .build()
-        .apply { repeatMode = Player.REPEAT_MODE_ONE }
+    /** Nach Netzwerkfehlern mit wachsender Pause (bis 30 s) an derselben Stelle neu ansetzen. */
+    private fun recoverOnError(player: ExoPlayer) {
+        var attempts = 0
+        player.addListener(object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) {
+                if (!isRecoverable(error.errorCode)) return
+                attempts++
+                scope.launch {
+                    delay((attempts * 5_000L).coerceAtMost(30_000L))
+                    if (player.playerError != null) {
+                        player.prepare()
+                        player.play()
+                    }
+                }
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) attempts = 0
+            }
+        })
+    }
 
     private val _player = MutableStateFlow(PlayerState())
     val player: StateFlow<PlayerState> = _player
@@ -107,7 +141,6 @@ class PlaybackEngine(
     fun play(queue: List<ItemDto>, startIndex: Int) {
         scope.launch {
             val session = sessionStore.current() ?: return@launch
-            authorize(session.token)
             mainPlayer.setMediaItems(queue.map { it.toMediaItem(session.serverUrl) }, startIndex, 0L)
             mainPlayer.prepare()
             mainPlayer.play()
@@ -184,7 +217,6 @@ class PlaybackEngine(
 
     private suspend fun loadAmbient(item: ItemDto) {
         val session = sessionStore.current() ?: return
-        authorize(session.token)
         ambientPlayer.setMediaItem(item.toMediaItem(session.serverUrl))
         ambientPlayer.prepare()
     }
@@ -253,9 +285,6 @@ class PlaybackEngine(
 
     // --- Intern ---------------------------------------------------------------------------------
 
-    private fun authorize(token: String) {
-        dataSourceFactory.setDefaultRequestProperties(mapOf("Authorization" to "Bearer $token"))
-    }
 
     private fun syncState() {
         val queue = _player.value.queue
@@ -273,6 +302,7 @@ class PlaybackEngine(
     private fun ItemDto.toMediaItem(serverUrl: String) = MediaItem.Builder()
         .setMediaId(id.toString())
         .setUri(AsmrClient.audioUrl(serverUrl, id).toUri())
+        .setCustomCacheKey(OfflineStore.cacheKey(id))
         .setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle(title)
@@ -284,6 +314,9 @@ class PlaybackEngine(
 
     private companion object {
         const val SEEK_STEP_MS = 15_000L
+        const val MIN_BUFFER_MS = 60_000
+        const val MAX_BUFFER_MS = 30 * 60_000
+        const val TARGET_BUFFER_BYTES = 64 * 1024 * 1024
         const val FADE_STEP_MS = 250L
         const val DEFAULT_AMBIENT_VOLUME = 0.5f
 

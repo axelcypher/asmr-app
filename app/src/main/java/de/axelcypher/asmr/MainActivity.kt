@@ -96,11 +96,18 @@ private fun AsmrRoot(container: AppContainer) {
         // Key pro Benutzer, damit nach einem Benutzerwechsel ein frisches ViewModel entsteht.
         is SessionState.LoggedIn -> LibraryScreen(
             viewModel(key = "library-${state.username}") {
-                LibraryViewModel(container.asmrClient, container.sessionStore, container.playbackSettings, container.appUpdater)
+                LibraryViewModel(
+                    container.asmrClient,
+                    container.sessionStore,
+                    container.playbackSettings,
+                    container.appUpdater,
+                    container.offline,
+                )
             },
             container.playbackEngine,
             container.sharedUrl,
             container.asmrClient,
+            container.offline,
         )
     }
 }

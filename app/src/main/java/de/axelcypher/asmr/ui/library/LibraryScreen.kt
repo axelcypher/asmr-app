@@ -35,6 +35,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -64,6 +65,8 @@ import de.axelcypher.asmr.api.ItemDto
 import de.axelcypher.asmr.api.UpdateItemRequest
 import de.axelcypher.asmr.data.api.AsmrClient
 import de.axelcypher.asmr.data.settings.UpdateChannel
+import de.axelcypher.asmr.playback.OfflineState
+import de.axelcypher.asmr.playback.OfflineStore
 import de.axelcypher.asmr.playback.PlaybackEngine
 import de.axelcypher.asmr.ui.AppIcons
 import de.axelcypher.asmr.ui.creator.CreatorSheet
@@ -88,8 +91,8 @@ private sealed interface LibraryDialog {
     data class Creator(val name: String) : LibraryDialog
 }
 
-private enum class FolderAction { Access, Creator }
-private enum class ItemAction { Ambient, Creator, Edit, Move, Delete }
+private enum class FolderAction { Access, Creator, Download }
+private enum class ItemAction { Ambient, Creator, Edit, Move, Delete, Download, RemoveDownload }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -98,6 +101,7 @@ fun LibraryScreen(
     engine: PlaybackEngine,
     sharedUrl: MutableStateFlow<String?>,
     client: AsmrClient,
+    offline: OfflineStore,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val channel by viewModel.updateChannel.collectAsStateWithLifecycle(initialValue = UpdateChannel.STABLE)
@@ -107,6 +111,8 @@ fun LibraryScreen(
 
     var showPlayer by rememberSaveable { mutableStateOf(false) }
     var showProfile by rememberSaveable { mutableStateOf(false) }
+    var showDownloads by rememberSaveable { mutableStateOf(false) }
+    val downloads by offline.states.collectAsStateWithLifecycle()
     var dialog by remember { mutableStateOf<LibraryDialog?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
 
@@ -139,6 +145,17 @@ fun LibraryScreen(
                 viewModel.reload()
             },
         )
+    } else if (showDownloads) {
+        DownloadsScreen(
+            offline = offline,
+            onPlay = { items, index ->
+                engine.play(items, index)
+                showPlayer = true
+            },
+            onAmbient = engine::setAmbient,
+            onClose = { showDownloads = false },
+            bottomBar = { MiniPlayer(engine, onOpen = { showPlayer = true }) },
+        )
     } else {
         BackHandler(enabled = state.path.isNotEmpty()) { viewModel.up() }
         Scaffold(
@@ -163,6 +180,7 @@ fun LibraryScreen(
                                     dialog = LibraryDialog.Imports
                                     viewModel.refreshImports()
                                 }
+                                MenuEntry("Heruntergeladen") { menuOpen = false; showDownloads = true }
                                 MenuEntry("Aktualisieren") { menuOpen = false; viewModel.reload() }
                                 MenuEntry("Update-Kanal: " + if (channel == UpdateChannel.STABLE) "Stabil" else "Nightly") {
                                     menuOpen = false
@@ -197,6 +215,8 @@ fun LibraryScreen(
                 LibraryContent(
                     state = state,
                     viewModel = viewModel,
+                    downloads = downloads,
+                    onShowDownloads = { showDownloads = true },
                     onPlay = ::play,
                     onFolderAction = { folder, action ->
                         dialog = when (action) {
@@ -205,11 +225,17 @@ fun LibraryScreen(
                                 LibraryDialog.Access(folder)
                             }
                             FolderAction.Creator -> LibraryDialog.Creator(folder.name)
+                            FolderAction.Download -> {
+                                viewModel.downloadFolder(folder.path)
+                                null
+                            }
                         }
                     },
                     onItemAction = { item, action ->
                         when (action) {
                             ItemAction.Ambient -> engine.setAmbient(item)
+                            ItemAction.Download -> viewModel.download(item)
+                            ItemAction.RemoveDownload -> viewModel.removeDownload(item)
                             ItemAction.Creator -> dialog = item.creator?.let(LibraryDialog::Creator)
                             ItemAction.Edit -> dialog = LibraryDialog.Edit(item)
                             ItemAction.Move -> {
@@ -293,6 +319,8 @@ private fun MenuEntry(label: String, onClick: () -> Unit) {
 private fun LibraryContent(
     state: LibraryUiState,
     viewModel: LibraryViewModel,
+    downloads: Map<Long, OfflineState>,
+    onShowDownloads: () -> Unit,
     onPlay: (Int) -> Unit,
     onFolderAction: (FolderDto, FolderAction) -> Unit,
     onItemAction: (ItemDto, ItemAction) -> Unit,
@@ -303,9 +331,16 @@ private fun LibraryContent(
             state.isLoading && state.folders.isEmpty() && state.items.isEmpty() ->
                 CircularProgressIndicator(Modifier.align(Alignment.Center))
 
-            error != null -> Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(error, color = MaterialTheme.colorScheme.error)
-                Button(onClick = viewModel::reload, modifier = Modifier.padding(top = 8.dp)) { Text("Erneut versuchen") }
+            error != null -> Column(
+                Modifier.align(Alignment.Center).padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(if (state.offline) "Server nicht erreichbar" else error, color = MaterialTheme.colorScheme.error)
+                Button(onClick = viewModel::reload) { Text("Erneut versuchen") }
+                if (state.offline) {
+                    OutlinedButton(onClick = onShowDownloads) { Text("Heruntergeladene Tracks") }
+                }
             }
 
             state.folders.isEmpty() && state.items.isEmpty() -> Column(
@@ -337,7 +372,7 @@ private fun LibraryContent(
                     }
                 }
                 itemsIndexed(state.items, key = { _, item -> item.id }) { index, item ->
-                    ItemCard(item, state, onPlay = { onPlay(index) }, onAction = { onItemAction(item, it) })
+                    ItemCard(item, state, downloads[item.id], onPlay = { onPlay(index) }, onAction = { onItemAction(item, it) })
                 }
             }
         }
@@ -392,6 +427,7 @@ private fun FolderCard(folder: FolderDto, state: LibraryUiState, onOpen: () -> U
             }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 MenuEntry("Creator-Profil") { menuOpen = false; onAction(FolderAction.Creator) }
+                MenuEntry("Ordner herunterladen") { menuOpen = false; onAction(FolderAction.Download) }
                 if (state.isAdmin) MenuEntry("Zugriff festlegen") { menuOpen = false; onAction(FolderAction.Access) }
             }
         }
@@ -402,7 +438,13 @@ private fun FolderCard(folder: FolderDto, state: LibraryUiState, onOpen: () -> U
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ItemCard(item: ItemDto, state: LibraryUiState, onPlay: () -> Unit, onAction: (ItemAction) -> Unit) {
+private fun ItemCard(
+    item: ItemDto,
+    state: LibraryUiState,
+    download: OfflineState?,
+    onPlay: () -> Unit,
+    onAction: (ItemAction) -> Unit,
+) {
     var menuOpen by remember { mutableStateOf(false) }
     Column(
         Modifier.combinedClickable(onClick = onPlay, onLongClick = { menuOpen = true }),
@@ -413,7 +455,26 @@ private fun ItemCard(item: ItemDto, state: LibraryUiState, onPlay: () -> Unit, o
                 url = if (item.hasCover) "${AsmrClient.coverUrl(state.serverUrl, item.id)}?v=${state.imageVersion}" else null,
                 placeholder = AppIcons.Play,
             )
+            // Offline verfügbar (Haken) bzw. Fortschritt eines laufenden Downloads.
+            if (download != null) {
+                Text(
+                    if (download.downloaded) "✓ offline" else "${download.percent} %",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer)
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+            }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                if (download == null) {
+                    MenuEntry("Herunterladen") { menuOpen = false; onAction(ItemAction.Download) }
+                } else {
+                    MenuEntry("Download entfernen") { menuOpen = false; onAction(ItemAction.RemoveDownload) }
+                }
                 MenuEntry("Als Ambient-Spur") { menuOpen = false; onAction(ItemAction.Ambient) }
                 if (item.creator != null) MenuEntry("Creator-Profil") { menuOpen = false; onAction(ItemAction.Creator) }
                 if (state.isAdmin) {
