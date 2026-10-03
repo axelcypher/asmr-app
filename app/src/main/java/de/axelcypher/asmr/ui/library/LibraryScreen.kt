@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -26,6 +25,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -37,6 +37,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -52,29 +55,27 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil3.compose.AsyncImage
+import de.axelcypher.asmr.api.CategoryDto
 import de.axelcypher.asmr.api.FolderDto
 import de.axelcypher.asmr.api.ItemDto
+import de.axelcypher.asmr.api.PlaylistDto
 import de.axelcypher.asmr.api.UpdateItemRequest
 import de.axelcypher.asmr.data.api.AsmrClient
 import de.axelcypher.asmr.data.settings.UpdateChannel
-import de.axelcypher.asmr.playback.OfflineState
 import de.axelcypher.asmr.playback.OfflineStore
 import de.axelcypher.asmr.playback.PlaybackEngine
 import de.axelcypher.asmr.ui.AppIcons
 import de.axelcypher.asmr.ui.creator.CreatorSheet
-import de.axelcypher.asmr.ui.formatDuration
 import de.axelcypher.asmr.ui.imports.ImportDialog
 import de.axelcypher.asmr.ui.imports.ImportsSheet
-import de.axelcypher.asmr.ui.player.MiniPlayer
+import de.axelcypher.asmr.ui.player.NowPlayingBar
 import de.axelcypher.asmr.ui.player.PlayerScreen
+import de.axelcypher.asmr.ui.player.Tab
 import de.axelcypher.asmr.ui.profile.ProfileScreen
 import de.axelcypher.asmr.ui.profile.ProfileViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -84,15 +85,20 @@ private sealed interface LibraryDialog {
     data object Import : LibraryDialog
     data object Imports : LibraryDialog
     data object NewFolder : LibraryDialog
+    data object NewPlaylist : LibraryDialog
     data class Edit(val item: ItemDto) : LibraryDialog
     data class Move(val item: ItemDto) : LibraryDialog
     data class Delete(val item: ItemDto) : LibraryDialog
     data class Access(val folder: FolderDto) : LibraryDialog
     data class Creator(val name: String) : LibraryDialog
+    data class AddToPlaylist(val item: ItemDto) : LibraryDialog
+    data class CategoryEdit(val category: CategoryDto?) : LibraryDialog
+    data class Membership(val title: String, val itemId: Long?, val folder: String?) : LibraryDialog
+    data class RenamePlaylist(val playlist: PlaylistDto) : LibraryDialog
+    data class DeletePlaylist(val playlist: PlaylistDto) : LibraryDialog
 }
 
-private enum class FolderAction { Access, Creator, Download }
-private enum class ItemAction { Ambient, Creator, Edit, Move, Delete, Download, RemoveDownload }
+private enum class FolderAction { Access, Creator, Download, Categories, MarkAmbient }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -106,13 +112,14 @@ fun LibraryScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val channel by viewModel.updateChannel.collectAsStateWithLifecycle(initialValue = UpdateChannel.STABLE)
     val shared by sharedUrl.collectAsStateWithLifecycle()
+    val downloads by offline.states.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
 
+    var tab by rememberSaveable { mutableStateOf(Tab.Library) }
+    var folderView by rememberSaveable { mutableStateOf(false) }
     var showPlayer by rememberSaveable { mutableStateOf(false) }
-    var showProfile by rememberSaveable { mutableStateOf(false) }
     var showDownloads by rememberSaveable { mutableStateOf(false) }
-    val downloads by offline.states.collectAsStateWithLifecycle()
     var dialog by remember { mutableStateOf<LibraryDialog?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
 
@@ -120,14 +127,52 @@ fun LibraryScreen(
     LaunchedEffect(viewModel) { viewModel.intents.collect { context.startActivity(it) } }
     LaunchedEffect(shared) { if (shared != null) dialog = LibraryDialog.Import }
 
+    val cards = CardContext(state.serverUrl, state.imageVersion, state.isAdmin, downloads)
+
     // Benachrichtigung für Lockscreen-Steuerung; ohne Erlaubnis spielt es trotzdem.
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
-    fun play(index: Int) {
+    fun askNotifications() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        engine.play(state.items, index)
+    }
+    fun play(items: List<ItemDto>, index: Int) {
+        askNotifications()
+        engine.play(items, index)
         showPlayer = true
+    }
+    fun playAmbient(item: ItemDto) {
+        askNotifications()
+        engine.playAmbient(item)
+    }
+    fun toggleFavorite(item: ItemDto) {
+        viewModel.toggleFavorite(item)
+        engine.updateQueueItem(item.copy(isFavorite = !item.isFavorite))
+    }
+    fun onItemAction(item: ItemDto, action: ItemAction) {
+        when (action) {
+            ItemAction.Layer -> engine.setAmbient(item)
+            ItemAction.Favorite -> toggleFavorite(item)
+            ItemAction.AddToPlaylist -> {
+                viewModel.loadPlaylists()
+                dialog = LibraryDialog.AddToPlaylist(item)
+            }
+            ItemAction.RemoveFromPlaylist -> state.detailPlaylist?.let { viewModel.removeFromPlaylist(it.id, item) }
+            ItemAction.Creator -> dialog = item.creator?.let(LibraryDialog::Creator)
+            ItemAction.Download -> viewModel.download(item)
+            ItemAction.RemoveDownload -> viewModel.removeDownload(item)
+            ItemAction.Edit -> dialog = LibraryDialog.Edit(item)
+            ItemAction.Categories -> {
+                viewModel.loadMembership(item.id, null)
+                dialog = LibraryDialog.Membership("Kategorien: ${item.title}", item.id, null)
+            }
+            ItemAction.MarkAmbient -> viewModel.setItemAmbient(item, !item.isAmbient)
+            ItemAction.Move -> {
+                viewModel.loadAllFolders()
+                dialog = LibraryDialog.Move(item)
+            }
+            ItemAction.Delete -> dialog = LibraryDialog.Delete(item)
+        }
     }
 
     if (showPlayer) {
@@ -136,35 +181,31 @@ fun LibraryScreen(
             state.serverUrl,
             onClose = { showPlayer = false },
             onCreator = { dialog = LibraryDialog.Creator(it) },
+            onFavorite = ::toggleFavorite,
         )
-    } else if (showProfile) {
-        ProfileScreen(
-            viewModel { ProfileViewModel(client) },
-            onClose = {
-                showProfile = false
-                viewModel.reload()
-            },
-        )
-    } else if (showDownloads) {
-        DownloadsScreen(
-            offline = offline,
-            onPlay = { items, index ->
-                engine.play(items, index)
-                showPlayer = true
-            },
-            onAmbient = engine::setAmbient,
-            onClose = { showDownloads = false },
-            bottomBar = { MiniPlayer(engine, onOpen = { showPlayer = true }) },
-        )
-    } else {
-        BackHandler(enabled = state.path.isNotEmpty()) { viewModel.up() }
-        Scaffold(
-            topBar = {
+        LibraryDialogs(dialog, state, viewModel, client, shared, onClose = { dialog = null; sharedUrl.value = null })
+        return
+    }
+
+    val detail = state.detail
+    BackHandler(enabled = tab == Tab.Library && !showDownloads && (detail != null || (folderView && state.path.isNotEmpty()))) {
+        if (detail != null) viewModel.closeDetail() else viewModel.up()
+    }
+
+    Scaffold(
+        topBar = {
+            if (tab == Tab.Library && !showDownloads) {
                 TopAppBar(
-                    title = { Text(state.breadcrumbs.lastOrNull() ?: "Bibliothek", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    title = {
+                        val title = detail?.title(state)
+                            ?: if (folderView) state.breadcrumbs.lastOrNull() ?: "Bibliothek" else "Bibliothek"
+                        Text(title, style = MaterialTheme.typography.headlineMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    },
                     navigationIcon = {
-                        if (state.path.isNotEmpty()) {
-                            IconButton(onClick = { viewModel.up() }) { Icon(AppIcons.ArrowBack, "Ordner hoch") }
+                        if (detail != null || (folderView && state.path.isNotEmpty())) {
+                            IconButton(onClick = { if (detail != null) viewModel.closeDetail() else viewModel.up() }) {
+                                Icon(AppIcons.ArrowBack, "Zurück")
+                            }
                         }
                     },
                     actions = {
@@ -172,16 +213,16 @@ fun LibraryScreen(
                         Box {
                             IconButton(onClick = { menuOpen = true }) { Icon(AppIcons.MoreVert, "Menü") }
                             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                                if (state.isAdmin) {
+                                if (state.isAdmin && folderView) {
                                     MenuEntry("Neuer Ordner") { menuOpen = false; dialog = LibraryDialog.NewFolder }
                                 }
+                                MenuEntry("Heruntergeladen") { menuOpen = false; showDownloads = true }
                                 MenuEntry("Importe" + if (state.runningImports > 0) " (${state.runningImports} laufen)" else "") {
                                     menuOpen = false
                                     dialog = LibraryDialog.Imports
                                     viewModel.refreshImports()
                                 }
-                                MenuEntry("Heruntergeladen") { menuOpen = false; showDownloads = true }
-                                MenuEntry("Aktualisieren") { menuOpen = false; viewModel.reload() }
+                                MenuEntry("Aktualisieren") { menuOpen = false; viewModel.reload(); viewModel.loadHome() }
                                 MenuEntry("Update-Kanal: " + if (channel == UpdateChannel.STABLE) "Stabil" else "Nightly") {
                                     menuOpen = false
                                     viewModel.setUpdateChannel(
@@ -189,63 +230,103 @@ fun LibraryScreen(
                                     )
                                 }
                                 MenuEntry("Nach Updates suchen") { menuOpen = false; viewModel.checkForUpdate(manual = true) }
-                                MenuEntry("Profil") { menuOpen = false; showProfile = true }
                             }
                         }
                     },
                 )
-            },
-            bottomBar = { MiniPlayer(engine, onOpen = { showPlayer = true }) },
-            snackbarHost = { SnackbarHost(snackbar) },
-        ) { padding ->
-            Column(Modifier.fillMaxSize().padding(padding)) {
-                state.update?.let { update ->
-                    Card(Modifier.fillMaxWidth().padding(12.dp)) {
-                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("Update verfügbar: ${update.versionName}", modifier = Modifier.weight(1f))
-                            if (state.isDownloadingUpdate) {
-                                CircularProgressIndicator(Modifier.padding(4.dp))
-                            } else {
-                                Button(onClick = viewModel::installUpdate) { Text("Installieren") }
-                            }
-                        }
+            }
+        },
+        bottomBar = {
+            NowPlayingBar(
+                engine = engine,
+                coverUrl = { id -> offline.localCover(id)?.toString() ?: "${AsmrClient.coverUrl(state.serverUrl, id)}?v=${state.imageVersion}" },
+                tab = tab,
+                onTab = {
+                    tab = it
+                    showDownloads = false
+                },
+                onOpenPlayer = { showPlayer = true },
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbar) },
+    ) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            when {
+                tab == Tab.Profile -> ProfileScreen(
+                    viewModel { ProfileViewModel(client) },
+                    onClose = { tab = Tab.Library },
+                )
+
+                showDownloads -> DownloadsScreen(
+                    offline = offline,
+                    onPlay = ::play,
+                    onAmbient = engine::setAmbient,
+                    onClose = { showDownloads = false },
+                    bottomBar = {},
+                )
+
+                detail != null -> DetailContent(
+                    detail, state, cards,
+                    DetailCallbacks(
+                        onPlay = ::play,
+                        onAmbientTap = ::playAmbient,
+                        onItemAction = ::onItemAction,
+                        onCreatorProfile = { dialog = LibraryDialog.Creator(it) },
+                        onCategoryEdit = { dialog = LibraryDialog.CategoryEdit(it) },
+                        onPlaylist = { viewModel.openDetail(Detail.Playlist(it.id)) },
+                        onNewPlaylist = { dialog = LibraryDialog.NewPlaylist },
+                        onRenamePlaylist = { dialog = LibraryDialog.RenamePlaylist(it) },
+                        onToggleShare = { viewModel.updatePlaylist(it.id, shared = !it.shared) },
+                        onDeletePlaylist = { dialog = LibraryDialog.DeletePlaylist(it) },
+                    ),
+                )
+
+                else -> Column(Modifier.fillMaxSize()) {
+                    UpdateBanner(state, viewModel)
+                    ViewSwitch(folderView) { folderView = it }
+                    if (folderView) {
+                        if (state.breadcrumbs.isNotEmpty()) Breadcrumbs(state.breadcrumbs, onOpen = viewModel::open)
+                        FolderContent(
+                            state = state,
+                            cards = cards,
+                            viewModel = viewModel,
+                            onShowDownloads = { showDownloads = true },
+                            onPlay = ::play,
+                            onItemAction = ::onItemAction,
+                            onFolderAction = { folder, action ->
+                                when (action) {
+                                    FolderAction.Access -> {
+                                        viewModel.loadAccess()
+                                        dialog = LibraryDialog.Access(folder)
+                                    }
+                                    FolderAction.Creator -> dialog = LibraryDialog.Creator(folder.name)
+                                    FolderAction.Download -> viewModel.downloadFolder(folder.path)
+                                    FolderAction.Categories -> {
+                                        viewModel.loadMembership(null, folder.path)
+                                        dialog = LibraryDialog.Membership("Kategorien: ${folder.name}", null, folder.path)
+                                    }
+                                    FolderAction.MarkAmbient -> viewModel.setFolderAmbient(folder.path, !folder.isAmbient)
+                                }
+                            },
+                        )
+                    } else if (state.home == null && state.offline) {
+                        OfflineHint(viewModel, onShowDownloads = { showDownloads = true })
+                    } else {
+                        HomeContent(
+                            state.home, cards,
+                            HomeCallbacks(
+                                onCreator = { viewModel.openDetail(Detail.Creator(it)) },
+                                onPlay = ::play,
+                                onAmbientTap = ::playAmbient,
+                                onItemAction = ::onItemAction,
+                                onSeeAll = viewModel::openDetail,
+                                onPlaylist = { viewModel.openDetail(Detail.Playlist(it.id)) },
+                                onCategory = { viewModel.openDetail(Detail.Category(it)) },
+                                onCategoryEdit = { dialog = LibraryDialog.CategoryEdit(it) },
+                            ),
+                        )
                     }
                 }
-                if (state.breadcrumbs.isNotEmpty()) Breadcrumbs(state.breadcrumbs, onOpen = viewModel::open)
-                LibraryContent(
-                    state = state,
-                    viewModel = viewModel,
-                    downloads = downloads,
-                    onShowDownloads = { showDownloads = true },
-                    onPlay = ::play,
-                    onFolderAction = { folder, action ->
-                        dialog = when (action) {
-                            FolderAction.Access -> {
-                                viewModel.loadAccess()
-                                LibraryDialog.Access(folder)
-                            }
-                            FolderAction.Creator -> LibraryDialog.Creator(folder.name)
-                            FolderAction.Download -> {
-                                viewModel.downloadFolder(folder.path)
-                                null
-                            }
-                        }
-                    },
-                    onItemAction = { item, action ->
-                        when (action) {
-                            ItemAction.Ambient -> engine.setAmbient(item)
-                            ItemAction.Download -> viewModel.download(item)
-                            ItemAction.RemoveDownload -> viewModel.removeDownload(item)
-                            ItemAction.Creator -> dialog = item.creator?.let(LibraryDialog::Creator)
-                            ItemAction.Edit -> dialog = LibraryDialog.Edit(item)
-                            ItemAction.Move -> {
-                                viewModel.loadAllFolders()
-                                dialog = LibraryDialog.Move(item)
-                            }
-                            ItemAction.Delete -> dialog = LibraryDialog.Delete(item)
-                        }
-                    },
-                )
             }
         }
     }
@@ -254,6 +335,51 @@ fun LibraryScreen(
         dialog = null
         sharedUrl.value = null
     })
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ViewSwitch(folderView: Boolean, onChange: (Boolean) -> Unit) {
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+        SegmentedButton(
+            selected = !folderView,
+            onClick = { onChange(false) },
+            shape = SegmentedButtonDefaults.itemShape(0, 2),
+        ) { Text("Übersicht") }
+        SegmentedButton(
+            selected = folderView,
+            onClick = { onChange(true) },
+            shape = SegmentedButtonDefaults.itemShape(1, 2),
+        ) { Text("Ordner") }
+    }
+}
+
+@Composable
+private fun UpdateBanner(state: LibraryUiState, viewModel: LibraryViewModel) {
+    val update = state.update ?: return
+    Card(Modifier.fillMaxWidth().padding(12.dp)) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Update verfügbar: ${update.versionName}", modifier = Modifier.weight(1f))
+            if (state.isDownloadingUpdate) {
+                CircularProgressIndicator(Modifier.padding(4.dp))
+            } else {
+                Button(onClick = viewModel::installUpdate) { Text("Installieren") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OfflineHint(viewModel: LibraryViewModel, onShowDownloads: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("Server nicht erreichbar", color = MaterialTheme.colorScheme.error)
+        Button(onClick = { viewModel.reload(); viewModel.loadHome() }) { Text("Erneut versuchen") }
+        OutlinedButton(onClick = onShowDownloads) { Text("Heruntergeladene Tracks") }
+    }
 }
 
 @Composable
@@ -280,6 +406,10 @@ private fun LibraryDialogs(
             viewModel.createFolder(it)
             onClose()
         }, onDismiss = onClose)
+        LibraryDialog.NewPlaylist -> TextInputDialog("Neue Playlist", "Name", "", "Anlegen", onConfirm = {
+            viewModel.createPlaylist(it)
+            onClose()
+        }, onDismiss = onClose)
         is LibraryDialog.Edit -> ItemEditor(dialog.item, onSave = { request ->
             viewModel.saveItem(dialog.item.id, request)
             onClose()
@@ -304,8 +434,58 @@ private fun LibraryDialogs(
             onImagesChanged = viewModel::imagesChanged,
             onDismiss = {
                 onClose()
-                viewModel.reload()
+                viewModel.loadHome()
             },
+        )
+        is LibraryDialog.AddToPlaylist -> AddToPlaylistDialog(
+            playlists = state.playlists,
+            onPick = {
+                viewModel.addToPlaylist(dialog.item, it, null)
+                onClose()
+            },
+            onCreate = {
+                viewModel.addToPlaylist(dialog.item, null, it)
+                onClose()
+            },
+            onDismiss = onClose,
+        )
+        is LibraryDialog.CategoryEdit -> CategoryDialog(
+            existing = dialog.category,
+            onSave = {
+                viewModel.saveCategory(dialog.category?.id, it)
+                onClose()
+            },
+            onDelete = {
+                dialog.category?.let { viewModel.deleteCategory(it.id) }
+                onClose()
+            },
+            onDismiss = onClose,
+        )
+        is LibraryDialog.Membership -> MembershipDialog(
+            title = dialog.title,
+            categories = state.categories,
+            initial = state.categoryMembership,
+            onSave = {
+                viewModel.saveMembership(dialog.itemId, dialog.folder, it)
+                onClose()
+            },
+            onDismiss = onClose,
+        )
+        is LibraryDialog.RenamePlaylist -> TextInputDialog("Playlist umbenennen", "Name", dialog.playlist.name, "Speichern", onConfirm = {
+            viewModel.updatePlaylist(dialog.playlist.id, name = it)
+            onClose()
+        }, onDismiss = onClose)
+        is LibraryDialog.DeletePlaylist -> AlertDialog(
+            onDismissRequest = onClose,
+            title = { Text("Playlist löschen?") },
+            text = { Text("\"${dialog.playlist.name}\" wird gelöscht. Die Tracks selbst bleiben erhalten.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deletePlaylist(dialog.playlist.id)
+                    onClose()
+                }) { Text("Löschen") }
+            },
+            dismissButton = { TextButton(onClick = onClose) { Text("Abbrechen") } },
         )
     }
 }
@@ -316,12 +496,12 @@ private fun MenuEntry(label: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun LibraryContent(
+private fun FolderContent(
     state: LibraryUiState,
+    cards: CardContext,
     viewModel: LibraryViewModel,
-    downloads: Map<Long, OfflineState>,
     onShowDownloads: () -> Unit,
-    onPlay: (Int) -> Unit,
+    onPlay: (List<ItemDto>, Int) -> Unit,
     onFolderAction: (FolderDto, FolderAction) -> Unit,
     onItemAction: (ItemDto, ItemAction) -> Unit,
 ) {
@@ -338,9 +518,7 @@ private fun LibraryContent(
             ) {
                 Text(if (state.offline) "Server nicht erreichbar" else error, color = MaterialTheme.colorScheme.error)
                 Button(onClick = viewModel::reload) { Text("Erneut versuchen") }
-                if (state.offline) {
-                    OutlinedButton(onClick = onShowDownloads) { Text("Heruntergeladene Tracks") }
-                }
+                if (state.offline) OutlinedButton(onClick = onShowDownloads) { Text("Heruntergeladene Tracks") }
             }
 
             state.folders.isEmpty() && state.items.isEmpty() -> Column(
@@ -372,7 +550,7 @@ private fun LibraryContent(
                     }
                 }
                 itemsIndexed(state.items, key = { _, item -> item.id }) { index, item ->
-                    ItemCard(item, state, downloads[item.id], onPlay = { onPlay(index) }, onAction = { onItemAction(item, it) })
+                    TrackCard(item, cards, onClick = { onPlay(state.items, index) }, onAction = { onItemAction(item, it) })
                 }
             }
         }
@@ -410,6 +588,7 @@ private fun FolderCard(folder: FolderDto, state: LibraryUiState, onOpen: () -> U
             Cover(
                 url = if (folder.hasCover) "${AsmrClient.folderCoverUrl(state.serverUrl, folder.path)}&v=${state.imageVersion}" else null,
                 placeholder = AppIcons.Folder,
+                modifier = Modifier.fillMaxWidth(),
             )
             if (folder.restricted) {
                 Icon(
@@ -425,102 +604,21 @@ private fun FolderCard(folder: FolderDto, state: LibraryUiState, onOpen: () -> U
                         .size(16.dp),
                 )
             }
+            if (folder.isAmbient) Badge("Ambiente", Modifier.align(Alignment.BottomStart))
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 MenuEntry("Creator-Profil") { menuOpen = false; onAction(FolderAction.Creator) }
                 MenuEntry("Ordner herunterladen") { menuOpen = false; onAction(FolderAction.Download) }
-                if (state.isAdmin) MenuEntry("Zugriff festlegen") { menuOpen = false; onAction(FolderAction.Access) }
+                if (state.isAdmin) {
+                    MenuEntry("Kategorien") { menuOpen = false; onAction(FolderAction.Categories) }
+                    MenuEntry(if (folder.isAmbient) "Ambiente-Markierung entfernen" else "Als Ambiente markieren") {
+                        menuOpen = false
+                        onAction(FolderAction.MarkAmbient)
+                    }
+                    MenuEntry("Zugriff festlegen") { menuOpen = false; onAction(FolderAction.Access) }
+                }
             }
         }
         Text(folder.name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Text("${folder.itemCount} Tracks", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun ItemCard(
-    item: ItemDto,
-    state: LibraryUiState,
-    download: OfflineState?,
-    onPlay: () -> Unit,
-    onAction: (ItemAction) -> Unit,
-) {
-    var menuOpen by remember { mutableStateOf(false) }
-    Column(
-        Modifier.combinedClickable(onClick = onPlay, onLongClick = { menuOpen = true }),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Box {
-            Cover(
-                url = if (item.hasCover) "${AsmrClient.coverUrl(state.serverUrl, item.id)}?v=${state.imageVersion}" else null,
-                placeholder = AppIcons.Play,
-            )
-            // Offline verfügbar (Haken) bzw. Fortschritt eines laufenden Downloads.
-            if (download != null) {
-                Text(
-                    if (download.downloaded) "✓ offline" else "${download.percent} %",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(6.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer)
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                )
-            }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                if (download == null) {
-                    MenuEntry("Herunterladen") { menuOpen = false; onAction(ItemAction.Download) }
-                } else {
-                    MenuEntry("Download entfernen") { menuOpen = false; onAction(ItemAction.RemoveDownload) }
-                }
-                MenuEntry("Als Ambient-Spur") { menuOpen = false; onAction(ItemAction.Ambient) }
-                if (item.creator != null) MenuEntry("Creator-Profil") { menuOpen = false; onAction(ItemAction.Creator) }
-                if (state.isAdmin) {
-                    MenuEntry("Bearbeiten & bewerten") { menuOpen = false; onAction(ItemAction.Edit) }
-                    MenuEntry("Verschieben") { menuOpen = false; onAction(ItemAction.Move) }
-                    MenuEntry("Löschen") { menuOpen = false; onAction(ItemAction.Delete) }
-                }
-            }
-        }
-        Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        val details = listOfNotNull(item.creator, item.durationSeconds?.let(::formatDuration))
-        if (details.isNotEmpty()) {
-            Text(
-                details.joinToString(" · "),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        // Die drei stärksten Trigger als Kurzinfo.
-        if (item.tags.isNotEmpty()) {
-            Text(
-                item.tags.take(3).joinToString(" · "),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-}
-
-@Composable
-private fun Cover(url: String?, placeholder: ImageVector) {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(placeholder, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(40.dp))
-        if (url != null) {
-            AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-        }
     }
 }

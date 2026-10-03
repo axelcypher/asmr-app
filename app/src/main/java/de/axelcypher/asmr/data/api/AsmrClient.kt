@@ -206,6 +206,96 @@ class AsmrClient(engine: HttpClientEngine, private val sessionStore: SessionStor
     suspend fun fetchAvatar(name: String): CreatorDto =
         httpClient.post("${creatorUrl(base(), name)}/avatar/fetch").body()
 
+    // --- Übersicht ---
+
+    suspend fun home(): de.axelcypher.asmr.api.HomeDto = httpClient.get("${base()}/api/home").body()
+
+    /** Gefilterte Trackliste, z.B. `favorites=true`, `ambient=true`, `creator=…`, `category=…`. */
+    suspend fun itemsWhere(vararg filters: Pair<String, String>): List<ItemDto> =
+        httpClient.get("${base()}/api/items") {
+            filters.forEach { (key, value) -> parameter(key, value) }
+            parameter("pageSize", 200)
+        }.body<ItemPage>().items
+
+    suspend fun setFavorite(itemId: Long, favorite: Boolean) {
+        val url = "${base()}/api/items/$itemId/favorite"
+        if (favorite) httpClient.put(url) else httpClient.delete(url)
+    }
+
+    suspend fun setItemAmbient(itemId: Long, ambient: Boolean) {
+        val url = "${base()}/api/items/$itemId/ambient"
+        if (ambient) httpClient.put(url) else httpClient.delete(url)
+    }
+
+    suspend fun setFolderAmbient(path: String, ambient: Boolean) {
+        val url = "${base()}/api/folders/ambient"
+        if (ambient) httpClient.put(url) { parameter("path", path) } else httpClient.delete(url) { parameter("path", path) }
+    }
+
+    // --- Kategorien ---
+
+    suspend fun categories(): List<de.axelcypher.asmr.api.CategoryDto> = httpClient.get("${base()}/api/categories").body()
+
+    suspend fun categoryDetail(id: Long): de.axelcypher.asmr.api.CategoryDetailDto =
+        httpClient.get("${base()}/api/categories/$id").body()
+
+    suspend fun saveCategory(id: Long?, request: de.axelcypher.asmr.api.CategoryRequest) {
+        if (id == null) {
+            httpClient.post("${base()}/api/categories") {
+                contentType(ContentType.Application.Json)
+                setBody(request)
+            }
+        } else {
+            httpClient.patch("${base()}/api/categories/$id") {
+                contentType(ContentType.Application.Json)
+                setBody(request)
+            }
+        }
+    }
+
+    suspend fun deleteCategory(id: Long) {
+        httpClient.delete("${base()}/api/categories/$id")
+    }
+
+    suspend fun setCategoryItem(categoryId: Long, itemId: Long, member: Boolean) {
+        val url = "${base()}/api/categories/$categoryId/items/$itemId"
+        if (member) httpClient.put(url) else httpClient.delete(url)
+    }
+
+    suspend fun setCategoryFolder(categoryId: Long, path: String, member: Boolean) {
+        val url = "${base()}/api/categories/$categoryId/folders"
+        if (member) httpClient.put(url) { parameter("path", path) } else httpClient.delete(url) { parameter("path", path) }
+    }
+
+    // --- Playlists ---
+
+    suspend fun playlists(): List<de.axelcypher.asmr.api.PlaylistDto> = httpClient.get("${base()}/api/playlists").body()
+
+    suspend fun playlist(id: Long): de.axelcypher.asmr.api.PlaylistDetailDto =
+        httpClient.get("${base()}/api/playlists/$id").body()
+
+    suspend fun createPlaylist(name: String): de.axelcypher.asmr.api.PlaylistDto =
+        httpClient.post("${base()}/api/playlists") {
+            contentType(ContentType.Application.Json)
+            setBody(de.axelcypher.asmr.api.PlaylistRequest(name = name))
+        }.body()
+
+    suspend fun updatePlaylist(id: Long, name: String? = null, shared: Boolean? = null) {
+        httpClient.patch("${base()}/api/playlists/$id") {
+            contentType(ContentType.Application.Json)
+            setBody(de.axelcypher.asmr.api.PlaylistRequest(name, shared))
+        }
+    }
+
+    suspend fun deletePlaylist(id: Long) {
+        httpClient.delete("${base()}/api/playlists/$id")
+    }
+
+    suspend fun setPlaylistItem(playlistId: Long, itemId: Long, member: Boolean) {
+        val url = "${base()}/api/playlists/$playlistId/items/$itemId"
+        if (member) httpClient.put(url) else httpClient.delete(url)
+    }
+
     private suspend fun base() = requireSession().serverUrl
 
     private fun LoginResponse.toSession(baseUrl: String): Session {

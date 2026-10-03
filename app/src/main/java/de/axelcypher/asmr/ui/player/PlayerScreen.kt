@@ -68,6 +68,7 @@ fun PlayerScreen(
     serverUrl: String,
     onClose: () -> Unit,
     onCreator: (String) -> Unit,
+    onFavorite: (de.axelcypher.asmr.api.ItemDto) -> Unit,
 ) {
     val player by engine.player.collectAsStateWithLifecycle()
     val ambient by engine.ambient.collectAsStateWithLifecycle()
@@ -132,7 +133,16 @@ fun PlayerScreen(
                 Text(creator, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
             }
         }
-        item?.let { TriggerChips(it.levels, Modifier.fillMaxWidth()) }
+        item?.let { current ->
+            IconButton(onClick = { onFavorite(current) }) {
+                Icon(
+                    if (current.isFavorite) AppIcons.Heart else AppIcons.HeartOutline,
+                    contentDescription = if (current.isFavorite) "Aus Favoriten entfernen" else "Zu Favoriten",
+                    tint = if (current.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            TriggerChips(current.levels, Modifier.fillMaxWidth())
+        }
 
         SeekBar(position, duration, onSeek = engine::seekTo)
 
@@ -300,38 +310,5 @@ private fun BlackScreen(onExit: () -> Unit) {
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.align(Alignment.BottomCenter).padding(32.dp),
         )
-    }
-}
-
-/** Kleine Leiste über der Bibliothek, solange etwas geladen ist. */
-@Composable
-fun MiniPlayer(engine: PlaybackEngine, onOpen: () -> Unit) {
-    val player by engine.player.collectAsStateWithLifecycle()
-    val timer by engine.sleepTimer.collectAsStateWithLifecycle()
-    val item = player.current ?: return
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable(onClick = onOpen)
-            .navigationBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
-            Text(
-                timer?.let { sleepLabel(it.endsAt, it.isFading) } ?: (item.creator ?: ""),
-                maxLines = 1,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        IconButton(onClick = engine::togglePlay) {
-            Icon(
-                if (player.isPlaying) AppIcons.Pause else AppIcons.Play,
-                contentDescription = if (player.isPlaying) "Pause" else "Abspielen",
-            )
-        }
     }
 }

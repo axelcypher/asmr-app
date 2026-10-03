@@ -4,6 +4,10 @@ import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import de.axelcypher.asmr.api.AccessOverviewDto
+import de.axelcypher.asmr.api.CategoryDto
+import de.axelcypher.asmr.api.CategoryRequest
+import de.axelcypher.asmr.api.HomeDto
+import de.axelcypher.asmr.api.PlaylistDto
 import de.axelcypher.asmr.api.FolderAccessDto
 import de.axelcypher.asmr.api.FolderDto
 import de.axelcypher.asmr.api.ImportJobDto
@@ -50,6 +54,17 @@ data class LibraryUiState(
     val imageVersion: Int = 0,
     /** Server nicht erreichbar: die Oberfläche bietet die heruntergeladenen Tracks an. */
     val offline: Boolean = false,
+    /** Startseite (Übersicht). */
+    val home: HomeDto? = null,
+    /** Geöffnete Detailansicht (Creator, Kategorie, Playlist, Favoriten, Ambiente). */
+    val detail: Detail? = null,
+    val detailItems: List<ItemDto> = emptyList(),
+    /** Bei einer Playlist-Detailansicht die Playlist selbst. */
+    val detailPlaylist: PlaylistDto? = null,
+    val playlists: List<PlaylistDto> = emptyList(),
+    val categories: List<CategoryDto> = emptyList(),
+    /** Für den Zuordnungs-Dialog: Kategorie-IDs eines Tracks bzw. Ordners. */
+    val categoryMembership: Set<Long> = emptySet(),
 ) {
     val runningImports get() = imports.count { it.status == ImportStatus.QUEUED || it.status == ImportStatus.RUNNING }
     val breadcrumbs: List<String> get() = if (path.isEmpty()) emptyList() else path.split('/')
@@ -86,6 +101,7 @@ class LibraryViewModel(
             _state.update { it.copy(serverUrl = session.serverUrl) }
         }
         open("")
+        loadHome()
         refreshImports()
         checkForUpdate()
     }
@@ -126,12 +142,12 @@ class LibraryViewModel(
 
     fun saveItem(id: Long, request: UpdateItemRequest, done: String = "Gespeichert") = action(done) {
         client.updateItem(id, request)
-        reload()
+        refreshAll()
     }
 
     fun deleteItem(item: ItemDto) = action("\"${item.title}\" gelöscht") {
         client.deleteItem(item.id)
-        reload()
+        refreshAll()
     }
 
     fun createFolder(name: String) = action("Ordner angelegt") {
@@ -157,6 +173,124 @@ class LibraryViewModel(
         }
 
     fun imagesChanged() = _state.update { it.copy(imageVersion = it.imageVersion + 1) }
+
+    // --- Übersicht ------------------------------------------------------------------------------
+
+    fun loadHome() = action(null) {
+        val home = client.home()
+        _state.update { it.copy(home = home, playlists = home.playlists, categories = home.categories) }
+    }
+
+    fun openDetail(detail: Detail) {
+        _state.update { it.copy(detail = detail, detailItems = emptyList(), detailPlaylist = null) }
+        loadDetail()
+    }
+
+    fun closeDetail() = _state.update { it.copy(detail = null, detailItems = emptyList(), detailPlaylist = null) }
+
+    private fun loadDetail() = action(null) {
+        when (val detail = _state.value.detail) {
+            null -> Unit
+            is Detail.Creator -> setDetailItems(client.itemsWhere("creator" to detail.name))
+            is Detail.Category -> setDetailItems(client.itemsWhere("category" to detail.category.id.toString()))
+            Detail.Favorites -> setDetailItems(client.itemsWhere("favorites" to "true"))
+            Detail.Ambient -> setDetailItems(client.itemsWhere("ambient" to "true"))
+            Detail.Playlists -> _state.update { it.copy(playlists = client.playlists()) }
+            is Detail.Playlist -> {
+                val playlist = client.playlist(detail.id)
+                _state.update { it.copy(detailItems = playlist.items, detailPlaylist = playlist.playlist) }
+            }
+        }
+    }
+
+    private fun setDetailItems(items: List<ItemDto>) = _state.update { it.copy(detailItems = items) }
+
+    /** Nach einer Änderung alles Sichtbare neu laden (Ordner, Startseite, Detailansicht). */
+    private fun refreshAll() {
+        reload()
+        loadHome()
+        loadDetail()
+    }
+
+    fun toggleFavorite(item: ItemDto) = action(if (item.isFavorite) "Aus Favoriten entfernt" else "Zu Favoriten hinzugefügt") {
+        client.setFavorite(item.id, !item.isFavorite)
+        refreshAll()
+    }
+
+    fun setItemAmbient(item: ItemDto, ambient: Boolean) = action(if (ambient) "Als Ambiente markiert" else "Ambiente entfernt") {
+        client.setItemAmbient(item.id, ambient)
+        refreshAll()
+    }
+
+    fun setFolderAmbient(path: String, ambient: Boolean) = action(if (ambient) "Ordner als Ambiente markiert" else "Ambiente entfernt") {
+        client.setFolderAmbient(path, ambient)
+        refreshAll()
+    }
+
+    // --- Kategorien (Admin) ---------------------------------------------------------------------
+
+    fun saveCategory(id: Long?, request: CategoryRequest) = action(if (id == null) "Kategorie angelegt" else "Gespeichert") {
+        client.saveCategory(id, request)
+        loadHome()
+    }
+
+    fun deleteCategory(id: Long) = action("Kategorie gelöscht") {
+        client.deleteCategory(id)
+        closeDetail()
+        loadHome()
+    }
+
+    /** Lädt, in welchen Kategorien ein Track bzw. Ordner steckt (für den Zuordnungs-Dialog). */
+    fun loadMembership(itemId: Long?, folder: String?) = action(null) {
+        val categories = client.categories()
+        val member = categories.filter { category ->
+            val detail = client.categoryDetail(category.id)
+            (itemId != null && itemId in detail.itemIds) || (folder != null && folder in detail.folders)
+        }.map { it.id }.toSet()
+        _state.update { it.copy(categories = categories, categoryMembership = member) }
+    }
+
+    fun saveMembership(itemId: Long?, folder: String?, selected: Set<Long>) = action("Kategorien gespeichert") {
+        val before = _state.value.categoryMembership
+        (selected - before).forEach { id ->
+            if (itemId != null) client.setCategoryItem(id, itemId, true) else client.setCategoryFolder(id, folder!!, true)
+        }
+        (before - selected).forEach { id ->
+            if (itemId != null) client.setCategoryItem(id, itemId, false) else client.setCategoryFolder(id, folder!!, false)
+        }
+        refreshAll()
+    }
+
+    // --- Playlists ------------------------------------------------------------------------------
+
+    fun loadPlaylists() = action(null) { _state.update { it.copy(playlists = client.playlists()) } }
+
+    fun addToPlaylist(item: ItemDto, playlistId: Long?, newName: String?) = action("Zur Playlist hinzugefügt") {
+        val id = playlistId ?: client.createPlaylist(newName!!.trim()).id
+        client.setPlaylistItem(id, item.id, true)
+        refreshAll()
+    }
+
+    fun removeFromPlaylist(playlistId: Long, item: ItemDto) = action("Aus Playlist entfernt") {
+        client.setPlaylistItem(playlistId, item.id, false)
+        refreshAll()
+    }
+
+    fun createPlaylist(name: String) = action("Playlist angelegt") {
+        client.createPlaylist(name.trim())
+        refreshAll()
+    }
+
+    fun updatePlaylist(id: Long, name: String? = null, shared: Boolean? = null) = action("Gespeichert") {
+        client.updatePlaylist(id, name, shared)
+        refreshAll()
+    }
+
+    fun deletePlaylist(id: Long) = action("Playlist gelöscht") {
+        client.deletePlaylist(id)
+        closeDetail()
+        loadHome()
+    }
 
     // --- Offline --------------------------------------------------------------------------------
 
@@ -265,3 +399,13 @@ class LibraryViewModel(
 suspend fun ClientRequestException.serverMessage(): String =
     response.bodyAsText().substringAfter("\"error\":\"", "").substringBefore('"')
         .ifEmpty { "Fehler ${response.status.value}" }
+
+/** Detailansichten der Übersicht. */
+sealed interface Detail {
+    data class Creator(val name: String) : Detail
+    data class Category(val category: CategoryDto) : Detail
+    data class Playlist(val id: Long) : Detail
+    data object Favorites : Detail
+    data object Ambient : Detail
+    data object Playlists : Detail
+}

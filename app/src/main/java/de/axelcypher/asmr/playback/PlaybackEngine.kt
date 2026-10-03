@@ -149,6 +149,29 @@ class PlaybackEngine(
         }
     }
 
+    /**
+     * Ambiente-Kachel angetippt: läuft schon etwas, wird der Track zur zweiten Spur; sonst spielt er
+     * allein im Loop (als Hauptspur, damit Benachrichtigung und Hintergrund-Wiedergabe greifen).
+     */
+    fun playAmbient(item: ItemDto) {
+        if (mainPlayer.isPlaying) {
+            setAmbient(item)
+        } else {
+            play(listOf(item), 0)
+            mainPlayer.repeatMode = Player.REPEAT_MODE_ONE
+        }
+    }
+
+    /** Ersetzt einen Track in der Warteschlange (z.B. nach Favorit-Umschalten), ohne die Wiedergabe zu stören. */
+    fun updateQueueItem(item: ItemDto) {
+        _player.update { state ->
+            state.copy(
+                queue = state.queue.map { if (it.id == item.id) item else it },
+                current = if (state.current?.id == item.id) item else state.current,
+            )
+        }
+    }
+
     fun togglePlay() {
         if (mainPlayer.isPlaying) {
             mainPlayer.pause()
