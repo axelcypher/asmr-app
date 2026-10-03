@@ -39,6 +39,10 @@ fun Route.homeRoutes(services: Services) {
     get("/home") {
         val viewer = call.viewer(services)
         val ambientFolders = services.ambientFolders.list()
+        // Leere Kategorien (z.B. alles darin gesperrt) bleiben für normale Benutzer unsichtbar.
+        val (ambientCategories, categories) = categories(services, viewer)
+            .filter { it.itemCount > 0 || call.currentUser().isAdmin }
+            .partition { it.isAmbient }
         call.respond(
             HomeDto(
                 creators = services.items.creators(viewer, onlyMarked = true),
@@ -47,7 +51,8 @@ fun Route.homeRoutes(services: Services) {
                 playlists = playlists(services, viewer),
                 ambient = services.items.list(viewer, ItemQuery(ambientFolders = ambientFolders, pageSize = HOME_ROW)).items
                     .withAmbient(ambientFolders),
-                categories = categories(services, viewer),
+                categories = categories,
+                ambientCategories = ambientCategories,
             ),
         )
     }

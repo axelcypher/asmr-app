@@ -56,7 +56,7 @@ fun HomeContent(home: HomeDto?, context: CardContext, callbacks: HomeCallbacks, 
     if (home == null) return
     LazyColumn(contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         if (home.creators.isNotEmpty()) {
-            item { SectionTitle("Creators") }
+            item { SectionTitle("ASMRtists", action = null) }
             item {
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     items(home.creators, key = { it.name }) { creator ->
@@ -109,13 +109,20 @@ fun HomeContent(home: HomeDto?, context: CardContext, callbacks: HomeCallbacks, 
             }
         }
 
-        item { SectionTitle("Ambiente") { callbacks.onSeeAll(Detail.Ambient) } }
-        item {
-            TrackRow(
-                home.ambient, context, callbacks.onItemAction,
-                empty = "Tracks oder Ordner als Ambiente markieren (Admin).",
-                showDetails = false,
-            ) { index -> callbacks.onAmbientTap(home.ambient[index]) }
+        // Ambiente: Kategorien mit Schalter "Ambiente" (Regen, Rauschen, …), keine einzelnen Tracks.
+        if (home.ambientCategories.isNotEmpty() || context.isAdmin) {
+            item { SectionTitle("Ambiente", action = null) }
+            item {
+                if (home.ambientCategories.isEmpty()) {
+                    EmptyHint("Kategorie mit Schalter \"Ambiente\" anlegen, z.B. \"Regen\" mit den passenden Ordnern.")
+                } else {
+                    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(home.ambientCategories, key = { it.id }) { category ->
+                            CategoryTile(category, context.isAdmin, callbacks, Modifier.width(150.dp))
+                        }
+                    }
+                }
+            }
         }
 
         item {
@@ -201,43 +208,17 @@ fun PlaylistCard(playlist: PlaylistDto, context: CardContext, modifier: Modifier
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+
+fun parseColor(hex: String): Color =
+    runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrDefault(Color(0xFF2F4A48))
+
 @Composable
 private fun CategoryGrid(categories: List<CategoryDto>, isAdmin: Boolean, callbacks: HomeCallbacks) {
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         categories.chunked(CATEGORY_COLUMNS).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 row.forEach { category ->
-                    // Drei Spalten sind schmal: Icon oben, Name und Anzahl darunter.
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            .height(92.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(parseColor(category.color))
-                            .combinedClickable(
-                                onClick = { callbacks.onCategory(category) },
-                                onLongClick = { if (isAdmin) callbacks.onCategoryEdit(category) },
-                            )
-                            .padding(horizontal = 10.dp, vertical = 10.dp),
-                        verticalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Icon(AppIcons.category(category.icon), contentDescription = null, tint = Color.White.copy(alpha = 0.85f))
-                        Column {
-                            Text(
-                                category.name,
-                                style = MaterialTheme.typography.titleSmall,
-                                color = Color.White,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                "${category.itemCount} Inhalte",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.7f),
-                            )
-                        }
-                    }
+                    CategoryTile(category, isAdmin, callbacks, Modifier.weight(1f))
                 }
                 repeat(CATEGORY_COLUMNS - row.size) { Spacer(Modifier.weight(1f)) }
             }
@@ -245,7 +226,33 @@ private fun CategoryGrid(categories: List<CategoryDto>, isAdmin: Boolean, callba
     }
 }
 
-private const val CATEGORY_COLUMNS = 3
+/** Farbige Kachel: Icon links, daneben Name und Anzahl; langes Tippen bearbeitet (Admin). */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun CategoryTile(category: CategoryDto, isAdmin: Boolean, callbacks: HomeCallbacks, modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .height(56.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(parseColor(category.color))
+            .combinedClickable(
+                onClick = { callbacks.onCategory(category) },
+                onLongClick = { if (isAdmin) callbacks.onCategoryEdit(category) },
+            )
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            AppIcons.category(category.icon),
+            contentDescription = null,
+            tint = Color.White.copy(alpha = 0.85f),
+            modifier = Modifier.size(20.dp),
+        )
+        Column(Modifier.padding(start = 8.dp)) {
+            Text(category.name, style = MaterialTheme.typography.labelLarge, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("${category.itemCount}", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.7f), maxLines = 1)
+        }
+    }
+}
 
-fun parseColor(hex: String): Color =
-    runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrDefault(Color(0xFF2F4A48))
+private const val CATEGORY_COLUMNS = 3

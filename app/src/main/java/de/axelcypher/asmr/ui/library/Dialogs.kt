@@ -232,6 +232,7 @@ fun CategoryDialog(
     var name by remember { mutableStateOf(existing?.name.orEmpty()) }
     var icon by remember { mutableStateOf(existing?.icon ?: de.axelcypher.asmr.api.CATEGORY_ICONS.first()) }
     var color by remember { mutableStateOf(existing?.color ?: de.axelcypher.asmr.api.CATEGORY_COLORS.first()) }
+    var ambient by remember { mutableStateOf(existing?.isAmbient ?: false) }
     var confirmDelete by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -239,6 +240,13 @@ fun CategoryDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Ambiente-Kategorie")
+                        Text("Erscheint in der Ambiente-Reihe; Sounds werden zur zweiten Spur", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Switch(checked = ambient, onCheckedChange = { ambient = it })
+                }
                 Text("Icon", style = MaterialTheme.typography.titleSmall)
                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     de.axelcypher.asmr.api.CATEGORY_ICONS.forEach { key ->
@@ -274,7 +282,7 @@ fun CategoryDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onSave(de.axelcypher.asmr.api.CategoryRequest(name.trim(), icon, color)) },
+                onClick = { onSave(de.axelcypher.asmr.api.CategoryRequest(name.trim(), icon, color, ambient)) },
                 enabled = name.isNotBlank(),
             ) { Text("Speichern") }
         },

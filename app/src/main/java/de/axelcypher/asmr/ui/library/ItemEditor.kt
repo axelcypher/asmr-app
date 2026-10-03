@@ -94,7 +94,7 @@ fun ItemEditor(
                         OutlinedTextField(
                             creator,
                             { creator = it },
-                            label = { Text("Creator") },
+                            label = { Text("ASMRtist") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                         )

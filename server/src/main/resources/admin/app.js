@@ -207,7 +207,7 @@ const PAGES = [
   ['folders', 'Ordner', renderFolders],
   ['categories', 'Kategorien', renderCategories],
   ['matrix', 'Bewertungsmatrix', renderMatrix],
-  ['creators', 'Creator', renderCreators],
+  ['creators', 'ASMRtists', renderCreators],
   ['users', 'Benutzer', renderUsers],
   ['imports', 'Importe', renderImports],
 ];
@@ -257,7 +257,7 @@ async function renderDashboard(el) {
   clear(el,
     h('h1', {}, 'Übersicht'),
     h('div', { class: 'cards' },
-      stat('Tracks', items.total), stat('Creator', creators.length), stat('Kategorien', categories.length), stat('Importe laufen', running)),
+      stat('Tracks', items.total), stat('ASMRtists', creators.length), stat('Kategorien', categories.length), stat('Importe laufen', running)),
     h('div', { class: 'card stack', style: { marginTop: '16px' } },
       h('h2', {}, 'Medienordner'),
       h('p', { class: 'muted' }, 'Neue Dateien auf dem NAS werden alle 30 Minuten übernommen, umbenannte Ordner beim Öffnen sofort.'),
@@ -291,7 +291,7 @@ async function renderTracks(el) {
   const [tags, creators] = await Promise.all([api('/tags'), api('/creators')]);
   const q = h('input', { type: 'search', placeholder: 'Suchen', value: trackState.q, class: 'grow' });
   const tag = h('select', {}, h('option', { value: '' }, 'Alle Trigger'), tags.map((t) => h('option', { value: t.name, selected: t.name === trackState.tag }, `${t.name} (${t.count})`)));
-  const creator = h('select', {}, h('option', { value: '' }, 'Alle Creator'), creators.map((c) => h('option', { value: c.name, selected: c.name === trackState.creator }, `${c.name} (${c.itemCount})`)));
+  const creator = h('select', {}, h('option', { value: '' }, 'Alle ASMRtists'), creators.map((c) => h('option', { value: c.name, selected: c.name === trackState.creator }, `${c.name} (${c.itemCount})`)));
   const sort = h('select', {}, [['TITLE', 'Titel'], ['ADDED', 'Neueste']].map(([v, l]) => h('option', { value: v, selected: v === trackState.sort }, l)));
   const tableBox = h('div');
   const bulkBox = h('div');
@@ -318,7 +318,7 @@ async function renderTracks(el) {
           type: 'checkbox',
           checked: page.items.length > 0 && page.items.every((i) => trackState.selected.has(i.id)),
           onchange: (e) => { page.items.forEach((i) => e.target.checked ? trackState.selected.add(i.id) : trackState.selected.delete(i.id)); loadTable(); renderBulk(); },
-        })), h('th', {}), h('th', {}, 'Titel'), h('th', {}, 'Creator'), h('th', {}, 'Länge'), h('th', {}, 'Ordner'), h('th', {}, 'Trigger'))),
+        })), h('th', {}), h('th', {}, 'Titel'), h('th', {}, 'ASMRtist'), h('th', {}, 'Länge'), h('th', {}, 'Ordner'), h('th', {}, 'Trigger'))),
         h('tbody', {}, page.items.map((item) => h('tr', {
           class: `clickable${trackState.editing === item.id ? ' selected' : ''}`,
           onclick: (e) => { if (e.target.type !== 'checkbox') openEditor(item.id); },
@@ -328,7 +328,7 @@ async function renderTracks(el) {
           onchange: (e) => { e.target.checked ? trackState.selected.add(item.id) : trackState.selected.delete(item.id); renderBulk(); },
         })),
         h('td', {}, item.hasCover ? h('img', { class: 'thumb', src: `/api/items/${item.id}/cover`, loading: 'lazy' }) : h('div', { class: 'thumb' })),
-        h('td', {}, h('div', { class: 'title' }, item.title), item.isAmbient && h('span', { class: 'badge' }, 'Ambiente')),
+        h('td', {}, h('div', { class: 'title' }, item.title)),
         h('td', {}, item.creator || ''),
         h('td', { class: 'muted' }, formatDuration(item.durationSeconds)),
         h('td', { class: 'muted small' }, item.folder || '–'),
@@ -379,7 +379,6 @@ async function trackEditor(panel, id, onSaved, onClose) {
   const folder = h('select', { style: { width: '100%' } },
     h('option', { value: '', selected: item.folder === '' }, 'Bibliothek (oberste Ebene)'),
     folders.map((f) => h('option', { value: f, selected: f === item.folder }, f)));
-  const ambient = h('input', { type: 'checkbox', checked: item.isAmbient });
   const memberIds = new Set(categories.filter((c) => c.detail.itemIds.includes(id)).map((c) => c.id));
   const categoryBoxes = categories.map((c) => {
     const box = h('input', { type: 'checkbox', checked: memberIds.has(c.id) });
@@ -397,7 +396,6 @@ async function trackEditor(panel, id, onSaved, onClose) {
     if (JSON.stringify(cleaned) !== JSON.stringify(item.levels)) patch.levels = cleaned;
     if (folder.value !== item.folder) patch.folder = folder.value;
     if (Object.keys(patch).length) await api(`/items/${id}`, { method: 'PATCH', body: patch });
-    if (ambient.checked !== item.isAmbient) await api(`/items/${id}/ambient`, { method: ambient.checked ? 'PUT' : 'DELETE' });
     for (const { c, box } of categoryBoxes) {
       if (box.checked !== memberIds.has(c.id)) await api(`/categories/${c.id}/items/${id}`, { method: box.checked ? 'PUT' : 'DELETE' });
     }
@@ -408,9 +406,8 @@ async function trackEditor(panel, id, onSaved, onClose) {
     item.hasCover && h('img', { src: `/api/items/${id}/cover`, style: { width: '100%', borderRadius: '10px' } }),
     h('audio', { controls: true, preload: 'none', src: `/api/items/${id}/audio` }),
     h('label', { class: 'muted small' }, 'Titel'), title,
-    h('label', { class: 'muted small' }, 'Creator'), creator,
+    h('label', { class: 'muted small' }, 'ASMRtist'), creator,
     h('label', { class: 'muted small' }, 'Ordner (verschiebt die Datei auf dem NAS)'), folder,
-    h('label', { class: 'check' }, ambient, 'Ambiente'),
     categories.length > 0 && h('div', {}, h('h3', {}, 'Kategorien'), h('div', { class: 'stack' }, categoryBoxes.map((b) => b.label))),
     h('h3', {}, 'Trigger-Matrix'), matrix,
     item.sourceUrl && h('p', { class: 'small' }, 'Quelle: ', h('a', { href: item.sourceUrl, target: '_blank', rel: 'noreferrer' }, item.sourceUrl)),
@@ -478,9 +475,7 @@ function bulkActions(ids, after) {
     h('div', { class: 'row' },
       category,
       h('button', { onclick: () => category.value && each((id) => api(`/categories/${category.value}/items/${id}`, { method: 'PUT' }), 'Zugeordnet') }, 'Zuordnen'),
-      h('button', { onclick: () => category.value && each((id) => api(`/categories/${category.value}/items/${id}`, { method: 'DELETE' }), 'Entfernt') }, 'Entfernen'),
-      h('button', { onclick: () => each((id) => api(`/items/${id}/ambient`, { method: 'PUT' }), 'Als Ambiente markiert') }, 'Ambiente an'),
-      h('button', { onclick: () => each((id) => api(`/items/${id}/ambient`, { method: 'DELETE' }), 'Ambiente entfernt') }, 'Ambiente aus')),
+      h('button', { onclick: () => category.value && each((id) => api(`/categories/${category.value}/items/${id}`, { method: 'DELETE' }), 'Entfernt') }, 'Entfernen')),
     h('div', { class: 'row' },
       trigger, level, levelLabel,
       h('button', {
@@ -496,7 +491,7 @@ function bulkActions(ids, after) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Ordner: Baum mit Zugriff, Ambiente, Kategorien
+// Ordner: Baum mit Zugriff und Kategorien
 
 async function renderFolders(el) {
   const treeBox = h('div', { class: 'card' });
@@ -512,8 +507,7 @@ async function renderFolders(el) {
       const toggle = h('span', { class: 'toggle' }, '▸');
       const label = h('span', { class: 'node', onclick: () => { selected = f; document.querySelectorAll('.tree .node').forEach((n) => n.classList.remove('active')); label.classList.add('active'); folderPanel(panel, f, refresh); } },
         f.name, ' ', h('span', { class: 'muted small' }, `(${f.itemCount})`),
-        f.restricted && h('span', { class: 'badge', style: { marginLeft: '6px' } }, 'gesperrt'),
-        f.isAmbient && h('span', { class: 'badge', style: { marginLeft: '6px' } }, 'Ambiente'));
+        f.restricted && h('span', { class: 'badge', style: { marginLeft: '6px' } }, 'gesperrt'));
       toggle.addEventListener('click', async () => {
         open = !open;
         toggle.textContent = open ? '▾' : '▸';
@@ -552,7 +546,6 @@ async function folderPanel(panel, folder, refresh) {
   renderGroups();
   const newGroup = h('input', { type: 'text', placeholder: 'Gruppe hinzufügen', class: 'grow' });
   const inherited = access.rules.filter((r) => folder.path.startsWith(`${r.path}/`));
-  const ambient = h('input', { type: 'checkbox', checked: folder.isAmbient });
   const categoryBoxes = categories.map((c) => ({ c, box: h('input', { type: 'checkbox', checked: c.detail.folders.includes(folder.path) }) }));
 
   const save = async () => {
@@ -561,7 +554,6 @@ async function folderPanel(panel, folder, refresh) {
     } else if (rule) {
       await api(`/admin/access?path=${enc(folder.path)}`, { method: 'DELETE' });
     }
-    if (ambient.checked !== folder.isAmbient) await api(`/folders/ambient?path=${enc(folder.path)}`, { method: ambient.checked ? 'PUT' : 'DELETE' });
     for (const { c, box } of categoryBoxes) {
       const was = c.detail.folders.includes(folder.path);
       if (box.checked !== was) await api(`/categories/${c.id}/folders?path=${enc(folder.path)}`, { method: box.checked ? 'PUT' : 'DELETE' });
@@ -572,7 +564,6 @@ async function folderPanel(panel, folder, refresh) {
     h('h2', {}, folder.name),
     h('p', { class: 'muted small' }, folder.path, ` · ${folder.itemCount} Tracks`),
     folder.hasCover && h('img', { src: `/api/folders/cover?path=${enc(folder.path)}`, style: { width: '160px', borderRadius: '10px' } }),
-    h('label', { class: 'check' }, ambient, 'Alle Tracks darin als Ambiente'),
     categories.length > 0 && h('div', {}, h('h3', {}, 'Kategorien (samt Unterordnern)'), h('div', { class: 'stack' }, categoryBoxes.map(({ c, box }) => h('label', { class: 'check' }, box, c.name)))),
     h('h3', {}, 'Zugriff'),
     inherited.length > 0 && h('p', { class: 'muted small' }, 'Zusätzlich gelten die Einschränkungen von: ', inherited.map((r) => r.path).join(', ')),
@@ -612,7 +603,7 @@ async function renderCategories(el, editId) {
         h('button', { disabled: index === 0, title: 'Nach oben', onclick: (e) => move(index, -1, e) }, '▲'),
         h('button', { disabled: index === categories.length - 1, title: 'Nach unten', onclick: (e) => move(index, 1, e) }, '▼'))),
       h('td', {}, h('span', { class: 'icon-btn', style: { background: c.color, borderRadius: '8px', color: '#fff', display: 'inline-grid' } }, icon(c.icon))),
-      h('td', {}, c.name),
+      h('td', {}, c.name, c.isAmbient && h('span', { class: 'badge', style: { marginLeft: '6px' } }, 'Ambiente')),
       h('td', { class: 'muted' }, c.itemCount),
       h('td', { class: 'small' }, c.detail.folders.join(', ') || '–'),
       h('td', { class: 'muted' }, c.detail.itemIds.length)))));
@@ -635,15 +626,18 @@ function categoryForm(panel, category, after) {
     clear(swatches, state.catalog.categoryColors.map((hex) => h('span', { class: `swatch${hex === color ? ' on' : ''}`, style: { background: hex }, onclick: () => { color = hex; render(); } })));
   };
   render();
+  const ambient = h('input', { type: 'checkbox', checked: !!category?.isAmbient });
+  const body = () => ({ name: name.value.trim(), icon: iconKey, color, isAmbient: ambient.checked });
   const save = () => category
-    ? api(`/categories/${category.id}`, { method: 'PATCH', body: { name: name.value.trim(), icon: iconKey, color } })
-    : api('/categories', { method: 'POST', body: { name: name.value.trim(), icon: iconKey, color } });
+    ? api(`/categories/${category.id}`, { method: 'PATCH', body: body() })
+    : api('/categories', { method: 'POST', body: body() });
 
   clear(panel, h('div', { class: 'card stack' },
     h('h2', {}, category ? 'Kategorie bearbeiten' : 'Neue Kategorie'),
     h('label', { class: 'muted small' }, 'Name'), name,
     h('label', { class: 'muted small' }, 'Icon'), icons,
     h('label', { class: 'muted small' }, 'Farbe'), swatches,
+    h('label', { class: 'check' }, ambient, 'Ambiente-Kategorie (eigene Reihe in der App, Sounds laufen als zweite Spur)'),
     category && h('div', {}, h('h3', {}, 'Zugeordnete Ordner'),
       category.detail.folders.length === 0 && h('p', { class: 'muted small' }, 'Keine. Ordner ordnest du unter "Ordner" zu, einzelne Tracks unter "Tracks".'),
       category.detail.folders.map((f) => h('div', { class: 'row' }, h('span', { class: 'grow' }, f),
@@ -745,22 +739,22 @@ async function renderMatrix(el) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Creator
+// ASMRtists
 
 async function renderCreators(el, selectedName) {
   const creators = await api('/creators');
   const panel = h('div', { class: 'panel' });
-  clear(el, h('h1', {}, 'Creator'), h('div', { class: 'split' },
+  clear(el, h('h1', {}, 'ASMRtists'), h('div', { class: 'split' },
     h('div', { class: 'card' }, h('table', {},
-      h('thead', {}, h('tr', {}, h('th', {}), h('th', {}, 'Name'), h('th', {}, 'Tracks'), h('th', {}, 'Als Creator'))),
+      h('thead', {}, h('tr', {}, h('th', {}), h('th', {}, 'Name'), h('th', {}, 'Tracks'), h('th', {}, 'Bei ASMRtists'))),
       h('tbody', {}, creators.map((c) => h('tr', { class: 'clickable', onclick: () => creatorPanel(panel, c.name, () => renderCreators(el, c.name)) },
         h('td', {}, c.hasAvatar ? h('img', { class: 'thumb', style: { borderRadius: '50%' }, src: `/api/creators/${enc(c.name)}/avatar?t=${Date.now()}` }) : h('div', { class: 'thumb' })),
         h('td', {}, c.name),
         h('td', { class: 'muted' }, c.itemCount),
         h('td', {}, h('input', {
-          type: 'checkbox', checked: c.isCreator, title: 'In der Creator-Reihe der App anzeigen',
+          type: 'checkbox', checked: c.isCreator, title: 'In der ASMRtists-Reihe der App anzeigen',
           onclick: (e) => e.stopPropagation(),
-          onchange: async (e) => { await run(() => api(`/creators/${enc(c.name)}/marked`, { method: e.target.checked ? 'PUT' : 'DELETE' }), e.target.checked ? 'Als Creator markiert' : 'Markierung entfernt'); },
+          onchange: async (e) => { await run(() => api(`/creators/${enc(c.name)}/marked`, { method: e.target.checked ? 'PUT' : 'DELETE' }), e.target.checked ? 'Als ASMRtist markiert' : 'Markierung entfernt'); },
         }))))))),
     panel));
   if (selectedName) creatorPanel(panel, selectedName, () => renderCreators(el, selectedName));
@@ -781,7 +775,7 @@ async function creatorPanel(panel, name, after) {
     h('label', { class: 'check' }, h('input', {
       type: 'checkbox', checked: creator.isCreator,
       onchange: async (e) => { if (await run(() => api(`/creators/${enc(name)}/marked`, { method: e.target.checked ? 'PUT' : 'DELETE' }), 'Gespeichert') !== undefined) after(); },
-    }), 'Als Creator anzeigen (Creator-Reihe in der App)'),
+    }), 'Bei den ASMRtists anzeigen (Reihe in der App)'),
     h('h3', {}, 'Links'), links,
     h('button', { class: 'primary', onclick: async () => { if (await run(() => api(`/creators/${enc(name)}`, { method: 'PUT', body: { links: links.value.split('\n') } }), 'Gespeichert') !== undefined) after(); } }, 'Links speichern'),
     h('h3', {}, 'Profilbild'),

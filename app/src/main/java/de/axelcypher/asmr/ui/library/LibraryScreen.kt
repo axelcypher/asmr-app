@@ -95,7 +95,7 @@ private sealed interface LibraryDialog {
     data class DeletePlaylist(val playlist: PlaylistDto) : LibraryDialog
 }
 
-private enum class FolderAction { Access, Creator, Download, Categories, MarkAmbient }
+private enum class FolderAction { Access, Creator, Download, Categories }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -166,7 +166,6 @@ fun LibraryScreen(
                 viewModel.loadMembership(item.id, null)
                 dialog = LibraryDialog.Membership("Kategorien: ${item.title}", item.id, null)
             }
-            ItemAction.MarkAmbient -> viewModel.setItemAmbient(item, !item.isAmbient)
             ItemAction.Move -> {
                 viewModel.loadAllFolders()
                 dialog = LibraryDialog.Move(item)
@@ -310,7 +309,6 @@ fun LibraryScreen(
                                         viewModel.loadMembership(null, folder.path)
                                         dialog = LibraryDialog.Membership("Kategorien: ${folder.name}", null, folder.path)
                                     }
-                                    FolderAction.MarkAmbient -> viewModel.setFolderAmbient(folder.path, !folder.isAmbient)
                                 }
                             },
                         )
@@ -628,16 +626,11 @@ private fun FolderCard(folder: FolderDto, state: LibraryUiState, onOpen: () -> U
                         .size(16.dp),
                 )
             }
-            if (folder.isAmbient) Badge("Ambiente", Modifier.align(Alignment.BottomStart))
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                MenuEntry("Creator-Profil") { menuOpen = false; onAction(FolderAction.Creator) }
+                MenuEntry("ASMRtist-Profil") { menuOpen = false; onAction(FolderAction.Creator) }
                 MenuEntry("Ordner herunterladen") { menuOpen = false; onAction(FolderAction.Download) }
                 if (state.isAdmin) {
                     MenuEntry("Kategorien") { menuOpen = false; onAction(FolderAction.Categories) }
-                    MenuEntry(if (folder.isAmbient) "Ambiente-Markierung entfernen" else "Als Ambiente markieren") {
-                        menuOpen = false
-                        onAction(FolderAction.MarkAmbient)
-                    }
                     MenuEntry("Zugriff festlegen") { menuOpen = false; onAction(FolderAction.Access) }
                 }
             }

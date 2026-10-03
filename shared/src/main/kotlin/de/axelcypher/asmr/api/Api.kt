@@ -176,10 +176,18 @@ data class CreatorSummaryDto(val name: String, val itemCount: Int, val hasAvatar
 
 /** Frei definierte Kategorie; [icon] ist ein Schlüssel aus [CATEGORY_ICONS], [color] ein Hex-Wert. */
 @Serializable
-data class CategoryDto(val id: Long, val name: String, val icon: String, val color: String, val itemCount: Int = 0)
+data class CategoryDto(
+    val id: Long,
+    val name: String,
+    val icon: String,
+    val color: String,
+    val itemCount: Int = 0,
+    /** Ambiente-Kategorie: erscheint in der Ambiente-Reihe, ihre Sounds werden zur zweiten Spur. */
+    val isAmbient: Boolean = false,
+)
 
 @Serializable
-data class CategoryRequest(val name: String, val icon: String, val color: String)
+data class CategoryRequest(val name: String, val icon: String, val color: String, val isAmbient: Boolean = false)
 
 /** Zugeordnete Ordner einer Kategorie (für den Admin-Dialog). */
 @Serializable
@@ -208,8 +216,11 @@ data class HomeDto(
     val creators: List<CreatorSummaryDto>,
     val favorites: List<ItemDto>,
     val playlists: List<PlaylistDto>,
+    /** Veraltet (einzelne Ambient-Tracks), nur für ältere App-Versionen. */
     val ambient: List<ItemDto>,
     val categories: List<CategoryDto>,
+    /** Ambiente-Kategorien, als Kacheln in der Ambiente-Reihe. */
+    val ambientCategories: List<CategoryDto> = emptyList(),
 )
 
 /** Icons, aus denen der Admin für Kategorien wählt (Pfade liegen in der App). */

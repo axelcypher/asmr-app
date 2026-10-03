@@ -14,7 +14,10 @@ class CategoryStore(private val db: Database) : FolderPathOwner {
 
     suspend fun list(): List<CategoryDto> = db.tx {
         query("SELECT * FROM categories ORDER BY position, name COLLATE NOCASE") {
-            CategoryDto(it.getLong("id"), it.getString("name"), it.getString("icon"), it.getString("color"))
+            CategoryDto(
+                it.getLong("id"), it.getString("name"), it.getString("icon"), it.getString("color"),
+                isAmbient = it.getInt("is_ambient") == 1,
+            )
         }
     }
 
@@ -23,14 +26,17 @@ class CategoryStore(private val db: Database) : FolderPathOwner {
     suspend fun create(request: CategoryRequest): CategoryDto = db.tx {
         val position = queryOne("SELECT COALESCE(MAX(position), 0) + 1 FROM categories") { it.getInt(1) }!!
         val id = insert(
-            "INSERT INTO categories (name, icon, color, position) VALUES (?, ?, ?, ?)",
-            request.name.trim(), request.icon, request.color, position,
+            "INSERT INTO categories (name, icon, color, position, is_ambient) VALUES (?, ?, ?, ?, ?)",
+            request.name.trim(), request.icon, request.color, position, request.isAmbient,
         )
-        CategoryDto(id, request.name.trim(), request.icon, request.color)
+        CategoryDto(id, request.name.trim(), request.icon, request.color, isAmbient = request.isAmbient)
     }
 
     suspend fun update(id: Long, request: CategoryRequest) = db.tx {
-        update("UPDATE categories SET name = ?, icon = ?, color = ? WHERE id = ?", request.name.trim(), request.icon, request.color, id)
+        update(
+            "UPDATE categories SET name = ?, icon = ?, color = ?, is_ambient = ? WHERE id = ?",
+            request.name.trim(), request.icon, request.color, request.isAmbient, id,
+        )
     }
 
     suspend fun delete(id: Long) = db.tx { update("DELETE FROM categories WHERE id = ?", id) }

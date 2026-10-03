@@ -50,7 +50,7 @@ fun SearchBar(search: SearchFilters, onQuery: (String) -> Unit, onClear: () -> U
     OutlinedTextField(
         value = search.query,
         onValueChange = onQuery,
-        placeholder = { Text("Tracks, Creator suchen") },
+        placeholder = { Text("Tracks, ASMRtists suchen") },
         leadingIcon = { Icon(AppIcons.Search, null) },
         trailingIcon = {
             Row {
@@ -116,7 +116,7 @@ fun FilterSheet(
             }
 
             if (creators.isNotEmpty()) {
-                ChipGroup("Creator") {
+                ChipGroup("ASMRtist") {
                     creators.forEach { name ->
                         FilterChip(
                             selected = search.creator == name,

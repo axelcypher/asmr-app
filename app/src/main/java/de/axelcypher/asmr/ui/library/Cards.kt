@@ -39,7 +39,7 @@ import de.axelcypher.asmr.ui.formatDuration
 /** Alles, was ein Track-Menü anbieten kann. */
 enum class ItemAction {
     Layer, Favorite, AddToPlaylist, RemoveFromPlaylist, Creator,
-    Download, RemoveDownload, Edit, Categories, MarkAmbient, Move, Delete,
+    Download, RemoveDownload, Edit, Categories, Move, Delete,
 }
 
 /** Was die Kacheln zum Anzeigen brauchen, unabhängig vom Bildschirm. */
@@ -144,11 +144,10 @@ private fun ItemMenuEntries(item: ItemDto, context: CardContext, download: Offli
     if (context.inOwnPlaylist) entry("Aus Playlist entfernen", ItemAction.RemoveFromPlaylist)
     entry("Als zweite Spur (Ambient)", ItemAction.Layer)
     entry(if (download == null) "Herunterladen" else "Download entfernen", if (download == null) ItemAction.Download else ItemAction.RemoveDownload)
-    if (item.creator != null) entry("Creator-Profil", ItemAction.Creator)
+    if (item.creator != null) entry("ASMRtist-Profil", ItemAction.Creator)
     if (context.isAdmin) {
         entry("Bearbeiten & bewerten", ItemAction.Edit)
         entry("Kategorien", ItemAction.Categories)
-        entry(if (item.isAmbient) "Ambiente-Markierung entfernen" else "Als Ambiente markieren", ItemAction.MarkAmbient)
         entry("Verschieben", ItemAction.Move)
         entry("Löschen", ItemAction.Delete)
     }

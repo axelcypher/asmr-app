@@ -69,7 +69,7 @@ fun DetailContent(detail: Detail, state: LibraryUiState, context: CardContext, c
                 PlaylistCard(playlist, context) { callbacks.onPlaylist(playlist) }
             }
         } else {
-            val ambient = detail == Detail.Ambient
+            val ambient = detail == Detail.Ambient || (detail is Detail.Category && detail.category.isAmbient)
             val ownPlaylist = state.detailPlaylist?.isMine == true
             itemsIndexed(state.detailItems, key = { _, item -> item.id }) { index, item ->
                 TrackCard(
@@ -145,7 +145,15 @@ private fun DetailHeader(detail: Detail, state: LibraryUiState, context: CardCon
             Detail.Favorites -> Unit
         }
 
-        if (detail != Detail.Playlists && detail != Detail.Ambient && state.detailItems.isNotEmpty()) {
+        val ambientCategory = detail is Detail.Category && detail.category.isAmbient
+        if (ambientCategory) {
+            Text(
+                "Ambiente: Antippen legt den Sound als zweite Spur unter den laufenden Titel; läuft nichts, spielt er im Loop.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (detail != Detail.Playlists && detail != Detail.Ambient && !ambientCategory && state.detailItems.isNotEmpty()) {
             Button(onClick = { callbacks.onPlay(state.detailItems, 0) }, modifier = Modifier.fillMaxWidth()) {
                 Icon(AppIcons.Play, null)
                 Text("Alle abspielen", modifier = Modifier.padding(start = 8.dp))

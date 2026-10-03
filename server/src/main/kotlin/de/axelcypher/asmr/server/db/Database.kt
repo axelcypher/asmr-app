@@ -183,6 +183,7 @@ class Database private constructor(private val connection: Connection) {
             )
             """,
             seedTriggerCatalog(),
+            "ALTER TABLE categories ADD COLUMN is_ambient INTEGER NOT NULL DEFAULT 0",
         )
     }
 }

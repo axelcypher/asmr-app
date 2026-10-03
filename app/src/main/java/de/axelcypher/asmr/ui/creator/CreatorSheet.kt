@@ -142,7 +142,7 @@ fun CreatorSheet(
 
             if (isAdmin) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text("In der Creator-Reihe anzeigen", modifier = Modifier.weight(1f))
+                    Text("Bei den ASMRtists anzeigen", modifier = Modifier.weight(1f))
                     androidx.compose.material3.Switch(
                         checked = creator?.isCreator == true,
                         enabled = !busy && creator != null,

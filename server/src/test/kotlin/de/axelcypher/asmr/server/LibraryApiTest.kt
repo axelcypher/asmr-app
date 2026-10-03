@@ -344,6 +344,7 @@ class LibraryApiTest {
         client.put("/api/creators/Gibi ASMR/marked") { bearerAuth(admin) }
         val adminHome = client.get("/api/home") { bearerAuth(admin) }.body<de.axelcypher.asmr.api.HomeDto>()
         assertEquals(4, adminHome.categories.single().itemCount)
+        assertTrue(adminHome.ambientCategories.isEmpty())
         assertEquals(setOf("birds", "tapping"), adminHome.ambient.map { it.title }.toSet())
         assertTrue(adminHome.ambient.all { it.isAmbient })
         assertEquals(2, adminHome.playlists.single().itemCount)
@@ -363,6 +364,17 @@ class LibraryApiTest {
         scanner.scan()
         val after = client.get("/api/home") { bearerAuth(admin) }.body<de.axelcypher.asmr.api.HomeDto>()
         assertEquals(4, after.categories.single().itemCount)
+
+        // Ambiente-Kategorie: landet in der Ambiente-Reihe statt im Kategorien-Raster.
+        val rain = client.post("/api/categories") {
+            bearerAuth(admin)
+            contentType(ContentType.Application.Json)
+            setBody(de.axelcypher.asmr.api.CategoryRequest("Regen", "water", "#36485A", isAmbient = true))
+        }.body<de.axelcypher.asmr.api.CategoryDto>()
+        client.put("/api/categories/${rain.id}/folders?path=Natur%20%26%20Wetter") { bearerAuth(admin) }
+        val withAmbient = client.get("/api/home") { bearerAuth(admin) }.body<de.axelcypher.asmr.api.HomeDto>()
+        assertEquals(listOf("Natur"), withAmbient.categories.map { it.name })
+        assertEquals(listOf("Regen" to 2), withAmbient.ambientCategories.map { it.name to it.itemCount })
         assertEquals(listOf("Natur & Wetter/Wald"), runBlocking { ambientFolders.list() })
     }
 
