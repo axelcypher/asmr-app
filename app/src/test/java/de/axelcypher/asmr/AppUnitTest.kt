@@ -14,6 +14,8 @@ class AppUnitTest {
     fun `server url wird normalisiert`() {
         assertEquals("https://asmr.example.de", normalizeServerUrl(" asmr.example.de/ "))
         assertEquals("http://192.168.1.5:8080", normalizeServerUrl("http://192.168.1.5:8080/"))
+        // Autokorrektur der Tastatur: Schema und Host klein, Pfad bleibt.
+        assertEquals("https://asmr.example.de/Sub", normalizeServerUrl("Https://ASMR.example.de/Sub/"))
     }
 
     @Test

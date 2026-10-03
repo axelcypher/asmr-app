@@ -356,8 +356,16 @@ class AsmrClient(engine: HttpClientEngine, private val sessionStore: SessionStor
     }
 }
 
-/** Ergänzt ein fehlendes Schema (https) und entfernt abschließende Schrägstriche. */
+/**
+ * Ergänzt ein fehlendes Schema (https), entfernt abschließende Schrägstriche und schreibt Schema und
+ * Host klein: die Tastatur macht gern "Https://" daraus, und Coil erkennt dann keine Web-Adresse.
+ */
 fun normalizeServerUrl(input: String): String {
     val trimmed = input.trim().trimEnd('/')
-    return if (trimmed.contains("://")) trimmed else "https://$trimmed"
+    val withScheme = if (trimmed.contains("://")) trimmed else "https://$trimmed"
+    val scheme = withScheme.substringBefore("://").lowercase()
+    val rest = withScheme.substringAfter("://")
+    val host = rest.substringBefore('/').lowercase()
+    val path = rest.removePrefix(rest.substringBefore('/'))
+    return "$scheme://$host$path"
 }

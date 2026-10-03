@@ -19,7 +19,8 @@ class SessionStore(private val dataStore: DataStore<Preferences>) {
     val session: Flow<Session?> = dataStore.data.map { prefs ->
         val serverUrl = prefs[SERVER_URL] ?: return@map null
         val token = prefs[TOKEN] ?: return@map null
-        Session(serverUrl, prefs[USERNAME].orEmpty(), token)
+        // Ältere Logins konnten "Https://…" gespeichert haben, siehe normalizeServerUrl.
+        Session(de.axelcypher.asmr.data.api.normalizeServerUrl(serverUrl), prefs[USERNAME].orEmpty(), token)
     }
 
     /** Zuletzt verwendete Server-URL, bleibt auch nach dem Abmelden erhalten. */

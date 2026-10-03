@@ -86,7 +86,12 @@ private fun ServerStep(state: LoginUiState, viewModel: LoginViewModel) {
         label = { Text("Server-URL") },
         placeholder = { Text("https://asmr.example.de") },
         singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Uri,
+            capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.None,
+            autoCorrectEnabled = false,
+            imeAction = ImeAction.Go,
+        ),
         keyboardActions = KeyboardActions(onGo = { viewModel.connect() }),
         modifier = Modifier.fillMaxWidth(),
     )
