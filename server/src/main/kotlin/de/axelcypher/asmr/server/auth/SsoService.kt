@@ -80,7 +80,7 @@ class SsoService(
         val isAdmin = config.adminGroup?.let { it in identity.groups }
 
         users.bySubject(identity.subject)?.let { user ->
-            users.updateFromSso(user.id, identity.displayName, identity.email, isAdmin)
+            users.updateFromSso(user.id, identity.displayName, identity.email, isAdmin, identity.groups)
             return users.byId(user.id)!!
         }
 
@@ -91,7 +91,7 @@ class SsoService(
                     throw OidcException("E-Mail-Adresse beim Provider nicht bestätigt, Konto wird nicht verknüpft")
                 }
                 users.linkSubject(match.id, identity.subject)
-                users.updateFromSso(match.id, identity.displayName, null, isAdmin)
+                users.updateFromSso(match.id, identity.displayName, null, isAdmin, identity.groups)
                 log.info("SSO-Identität mit bestehendem Konto {} verknüpft", match.username)
                 return users.byId(match.id)!!
             }
@@ -107,8 +107,9 @@ class SsoService(
                 email = identity.email,
                 oidcSubject = identity.subject,
             )
+            users.updateFromSso(user.id, null, null, null, identity.groups)
             log.info("Konto {} per SSO angelegt", user.username)
-            return user
+            return users.byId(user.id)!!
         }
 
         throw OidcException("Für diese Identität gibt es kein Konto")

@@ -5,6 +5,7 @@ import de.axelcypher.asmr.server.db.Database
 import de.axelcypher.asmr.server.db.ItemQuery
 import de.axelcypher.asmr.server.db.ItemStore
 import de.axelcypher.asmr.server.db.UserStore
+import de.axelcypher.asmr.server.db.Viewer
 import de.axelcypher.asmr.server.library.LibraryScanner
 import de.axelcypher.asmr.server.library.MediaInfo
 import de.axelcypher.asmr.server.library.MediaProbe
@@ -68,7 +69,7 @@ class ScannerTest {
         file("notes.txt")
 
         assertEquals(3, scanner.scan().added)
-        val all = items.list(userId, ItemQuery(sort = ItemSort.TITLE)).items.associateBy { it.title }
+        val all = items.list(Viewer(userId), ItemQuery(sort = ItemSort.TITLE)).items.associateBy { it.title }
 
         val rain = all.getValue("Rain Tapping")
         assertEquals("Gibi ASMR", rain.creator)
@@ -83,7 +84,7 @@ class ScannerTest {
 
         val video = all.getValue("video without cover")
         assertNull(video.creator)
-        assertTrue(items.files(video.id)!!.coverPath!!.startsWith(LibraryScanner.DATA_COVER_PREFIX))
+        assertTrue(items.files(video.id, Viewer(userId))!!.coverPath!!.startsWith(LibraryScanner.DATA_COVER_PREFIX))
 
         // Zweiter Scan: nichts Neues.
         assertEquals(0, scanner.scan().added)

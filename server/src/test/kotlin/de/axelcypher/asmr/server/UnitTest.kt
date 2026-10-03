@@ -1,5 +1,6 @@
 package de.axelcypher.asmr.server
 
+import de.axelcypher.asmr.api.DETECTED_TRIGGER_LEVEL
 import de.axelcypher.asmr.server.auth.Passwords
 import de.axelcypher.asmr.server.imports.ImportWorker
 import de.axelcypher.asmr.server.imports.TriggerTags
@@ -19,14 +20,15 @@ class UnitTest {
         )
         assertEquals(
             listOf("Soft Spoken", "No Talking", "Ear Cleaning", "Roleplay", "Crinkles", "Typing", "Layered"),
-            tags,
+            tags.keys.toList(),
         )
+        assertTrue(tags.values.all { it == DETECTED_TRIGGER_LEVEL })
     }
 
     @Test
     fun `trigger tags ohne falsche treffer`() {
         // "brain", "terrain", "strap", "therapy" dürfen nicht Rain/Tapping/Roleplay auslösen.
-        assertEquals(emptyList(), TriggerTags.detect("Brain melting terrain therapy", "strap", emptyList()))
+        assertEquals(emptyMap(), TriggerTags.detect("Brain melting terrain therapy, single licence", "strap", emptyList()))
     }
 
     @Test

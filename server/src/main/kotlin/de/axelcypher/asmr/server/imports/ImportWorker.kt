@@ -4,6 +4,8 @@ import de.axelcypher.asmr.api.ImportStatus
 import de.axelcypher.asmr.server.db.ImportStore
 import de.axelcypher.asmr.server.db.ItemStore
 import de.axelcypher.asmr.server.db.NewItem
+import de.axelcypher.asmr.server.library.SidecarMetadata
+import de.axelcypher.asmr.server.library.Sidecars
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -74,6 +76,8 @@ class ImportWorker(
         val audio = move(download.audio, folder.resolve("$baseName.${download.audio.extension}"))
         val cover = download.cover?.let { move(it, folder.resolve("$baseName.jpg")) }
 
+        val levels = TriggerTags.detect(info.title, info.description, info.tags)
+        Sidecars.write(audio, SidecarMetadata(info.title, info.uploader, levels.takeIf { it.isNotEmpty() }, info.webpageUrl))
         items.add(
             NewItem(
                 title = info.title,
@@ -84,7 +88,7 @@ class ImportWorker(
                 description = info.description,
                 sourceUrl = info.webpageUrl,
                 sourceKey = sourceKey,
-                tags = TriggerTags.detect(info.title, info.description, info.tags),
+                levels = levels,
             ),
         )
     }

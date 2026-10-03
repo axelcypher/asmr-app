@@ -6,30 +6,26 @@ import de.axelcypher.asmr.server.ApiException
 import de.axelcypher.asmr.server.Services
 import de.axelcypher.asmr.server.currentUser
 import de.axelcypher.asmr.server.db.ItemQuery
-import de.axelcypher.asmr.server.library.LibraryScanner
 import de.axelcypher.asmr.server.longParameter
 import de.axelcypher.asmr.server.requireAdmin
+import de.axelcypher.asmr.server.viewer
 import io.ktor.http.HttpStatusCode
-import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondFile
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
-import io.ktor.server.routing.post
-import kotlinx.coroutines.launch
 import io.ktor.server.routing.patch
+import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import io.ktor.server.routing.route
-import java.nio.file.Files
-import java.nio.file.Path
-import kotlin.io.path.isRegularFile
+import kotlinx.coroutines.launch
 
 private const val MAX_PAGE_SIZE = 200
 
 fun Route.itemRoutes(services: Services) {
-    get("/tags") { call.respond(services.items.tags()) }
+    get("/tags") { call.respond(services.items.tags(call.viewer(services))) }
 
     // Läuft im Hintergrund; das Ergebnis steht im Log, die App lädt danach neu.
     post("/library/scan") {
@@ -51,34 +47,39 @@ fun Route.itemRoutes(services: Services) {
                 page = params["page"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0,
                 pageSize = params["pageSize"]?.toIntOrNull()?.coerceIn(1, MAX_PAGE_SIZE) ?: 60,
             )
-            call.respond(services.items.list(call.currentUser().id, query))
+            call.respond(services.items.list(call.viewer(services), query))
         }
 
         route("/{id}") {
             get {
-                call.respond(services.items.get(call.longParameter("id"), call.currentUser().id) ?: notFound())
+                call.respond(services.items.get(call.longParameter("id"), call.viewer(services)) ?: notFound())
             }
 
+            // Metadaten ändern bzw. verschieben; landet in der Metadaten-Datei neben dem Track.
             patch {
+                call.requireAdmin()
                 val request = call.receive<UpdateItemRequest>()
                 val id = call.longParameter("id")
-                if (!services.items.update(id, request.title?.trim()?.ifEmpty { null }, request.creator, request.tags)) {
-                    notFound()
+                services.items.record(id) ?: notFound()
+                val title = request.title?.trim()?.ifEmpty { null }
+                if (title != null || request.creator != null || request.levels != null) {
+                    services.items.updateMetadata(id, title, request.creator?.trim(), request.levels)
+                    services.scanner.saveMetadata(id)
                 }
-                call.respond(services.items.get(id, call.currentUser().id)!!)
+                request.folder?.let { services.scanner.move(id, it) }
+                call.respond(services.items.get(id, call.viewer(services))!!)
             }
 
             delete {
                 call.requireAdmin()
-                val files = services.items.delete(call.longParameter("id")) ?: notFound()
-                listOfNotNull(files.audioPath, files.coverPath).forEach {
-                    Files.deleteIfExists(call.mediaFile(services, it))
-                }
+                services.scanner.delete(call.longParameter("id"))
                 call.respond(HttpStatusCode.NoContent)
             }
 
             put("/favorite") {
-                services.items.setFavorite(call.currentUser().id, call.longParameter("id"), favorite = true)
+                val id = call.longParameter("id")
+                services.items.get(id, call.viewer(services)) ?: notFound()
+                services.items.setFavorite(call.currentUser().id, id, favorite = true)
                 call.respond(HttpStatusCode.NoContent)
             }
 
@@ -89,30 +90,16 @@ fun Route.itemRoutes(services: Services) {
 
             // Range-Requests übernimmt das PartialContent-Plugin, damit Media3 spulen kann.
             get("/audio") {
-                val files = services.items.files(call.longParameter("id")) ?: notFound()
-                call.respondFile(call.mediaFile(services, files.audioPath).existingOrNotFound())
+                val files = services.items.files(call.longParameter("id"), call.viewer(services)) ?: notFound()
+                call.respondFile(services.storedFile(files.audioPath))
             }
 
             get("/cover") {
-                val cover = services.items.files(call.longParameter("id"))?.coverPath ?: notFound()
-                call.respondFile(call.mediaFile(services, cover).existingOrNotFound())
+                val files = services.items.files(call.longParameter("id"), call.viewer(services)) ?: notFound()
+                call.respondFile(services.storedFile(files.coverPath ?: notFound()))
             }
         }
     }
 }
 
-private fun notFound(): Nothing = throw ApiException(HttpStatusCode.NotFound, "Nicht gefunden")
-
-/**
- * Löst einen in der DB gespeicherten relativen Pfad auf, ohne den Medien- bzw. Cover-Ordner
- * verlassen zu können.
- */
-private fun ApplicationCall.mediaFile(services: Services, relative: String): Path {
-    val isGeneratedCover = relative.startsWith(LibraryScanner.DATA_COVER_PREFIX)
-    val root = (if (isGeneratedCover) services.coverDir else services.mediaDir).toAbsolutePath().normalize()
-    val file = root.resolve(relative.removePrefix(LibraryScanner.DATA_COVER_PREFIX)).normalize()
-    if (!file.startsWith(root)) throw ApiException(HttpStatusCode.NotFound, "Nicht gefunden")
-    return file
-}
-
-private fun Path.existingOrNotFound() = toFile().also { if (!isRegularFile()) notFound() }
+fun notFound(): Nothing = throw ApiException(HttpStatusCode.NotFound, "Nicht gefunden")

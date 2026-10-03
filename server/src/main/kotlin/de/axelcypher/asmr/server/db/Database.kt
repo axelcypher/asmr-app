@@ -117,6 +117,20 @@ class Database private constructor(private val connection: Connection) {
             )
             """,
             "CREATE UNIQUE INDEX items_audio_path ON items(audio_path)",
+            """
+            ALTER TABLE users ADD COLUMN groups TEXT NOT NULL DEFAULT '[]';
+            CREATE TABLE folder_access (
+                path TEXT PRIMARY KEY,
+                groups TEXT NOT NULL DEFAULT '[]',
+                user_ids TEXT NOT NULL DEFAULT '[]'
+            );
+            CREATE TABLE creators (
+                name TEXT PRIMARY KEY COLLATE NOCASE,
+                links TEXT NOT NULL DEFAULT '[]',
+                avatar_path TEXT
+            );
+            ALTER TABLE item_tags ADD COLUMN level INTEGER NOT NULL DEFAULT 5
+            """,
         )
     }
 }

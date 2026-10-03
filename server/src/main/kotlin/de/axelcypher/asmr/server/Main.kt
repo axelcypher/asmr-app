@@ -4,11 +4,14 @@ import de.axelcypher.asmr.api.ApiJson
 import de.axelcypher.asmr.server.auth.OidcClient
 import de.axelcypher.asmr.server.auth.SsoService
 import de.axelcypher.asmr.server.auth.randomToken
+import de.axelcypher.asmr.server.db.CreatorStore
 import de.axelcypher.asmr.server.db.Database
+import de.axelcypher.asmr.server.db.FolderAccessStore
 import de.axelcypher.asmr.server.db.ImportStore
 import de.axelcypher.asmr.server.db.ItemStore
 import de.axelcypher.asmr.server.db.UserStore
 import de.axelcypher.asmr.server.imports.ImportWorker
+import de.axelcypher.asmr.server.imports.YtDlpAvatarFetcher
 import de.axelcypher.asmr.server.imports.YtDlpDownloader
 import de.axelcypher.asmr.server.library.FfmpegProbe
 import de.axelcypher.asmr.server.library.LibraryScanner
@@ -61,7 +64,20 @@ fun main() {
         mediaDir = config.mediaDir,
         libraryLock = libraryLock,
     )
-    val services = Services(users, items, imports, worker, sso, scanner, config.mediaDir, coverDir)
+    val services = Services(
+        users = users,
+        items = items,
+        imports = imports,
+        folderAccess = FolderAccessStore(db),
+        creators = CreatorStore(db),
+        worker = worker,
+        sso = sso,
+        scanner = scanner,
+        avatarFetcher = YtDlpAvatarFetcher(config.ytDlp, config.dataDir.resolve("tmp")),
+        mediaDir = config.mediaDir,
+        coverDir = coverDir,
+        avatarDir = config.dataDir.resolve("avatars").createDirectories(),
+    )
 
     embeddedServer(Netty, port = config.port) {
         asmrModule(services)

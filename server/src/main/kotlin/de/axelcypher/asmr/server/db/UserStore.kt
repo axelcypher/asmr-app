@@ -1,9 +1,12 @@
 package de.axelcypher.asmr.server.db
 
+import de.axelcypher.asmr.api.ApiJson
 import de.axelcypher.asmr.api.UserDto
 import de.axelcypher.asmr.server.auth.Passwords
 import de.axelcypher.asmr.server.auth.randomToken
 import de.axelcypher.asmr.server.auth.sha256Hex
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import java.sql.Connection
 import java.sql.ResultSet
 import kotlin.time.Duration.Companion.days
@@ -16,8 +19,10 @@ data class UserRecord(
     val passwordHash: String?,
     val isAdmin: Boolean,
     val oidcSubject: String?,
+    /** SSO-Gruppen vom letzten Login; steuern die Ordner-Freigaben. */
+    val groups: List<String> = emptyList(),
 ) {
-    fun toDto() = UserDto(id, username, displayName, isAdmin, hasPassword = passwordHash != null)
+    fun toDto() = UserDto(id, username, displayName, isAdmin, hasPassword = passwordHash != null, groups = groups)
 }
 
 /** Konten und Sessions. Session-Tokens werden nur gehasht gespeichert. */
@@ -58,7 +63,14 @@ class UserStore(private val db: Database, private val now: () -> Long = System::
     suspend fun linkSubject(userId: Long, subject: String) =
         db.tx { update("UPDATE users SET oidc_subject = ? WHERE id = ?", subject, userId) }
 
-    suspend fun updateFromSso(userId: Long, displayName: String?, email: String?, isAdmin: Boolean?) = db.tx {
+    suspend fun updateFromSso(
+        userId: Long,
+        displayName: String?,
+        email: String?,
+        isAdmin: Boolean?,
+        groups: List<String>,
+    ) = db.tx {
+        update("UPDATE users SET groups = ? WHERE id = ?", ApiJson.encodeToString(GROUPS, groups), userId)
         update(
             "UPDATE users SET display_name = COALESCE(?, display_name), email = COALESCE(?, email) WHERE id = ?",
             displayName, email, userId,
@@ -119,9 +131,14 @@ class UserStore(private val db: Database, private val now: () -> Long = System::
         passwordHash = getString("password_hash"),
         isAdmin = getInt("is_admin") == 1,
         oidcSubject = getString("oidc_subject"),
+        groups = ApiJson.decodeFromString(GROUPS, getString("groups")),
     )
+
+    /** Alle Gruppen, die bei irgendeinem Benutzer vorkommen (für die Freigabe-Auswahl). */
+    suspend fun knownGroups(): List<String> = list().flatMap { it.groups }.distinctBy(String::lowercase).sorted()
 
     companion object {
         val SESSION_IDLE = 180.days
+        private val GROUPS = ListSerializer(String.serializer())
     }
 }

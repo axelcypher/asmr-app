@@ -14,7 +14,9 @@ import de.axelcypher.asmr.server.auth.OidcClient
 import de.axelcypher.asmr.server.auth.SsoService
 import de.axelcypher.asmr.server.auth.pkceChallenge
 import de.axelcypher.asmr.server.auth.randomToken
+import de.axelcypher.asmr.server.db.CreatorStore
 import de.axelcypher.asmr.server.db.Database
+import de.axelcypher.asmr.server.db.FolderAccessStore
 import de.axelcypher.asmr.server.db.ImportStore
 import de.axelcypher.asmr.server.db.ItemStore
 import de.axelcypher.asmr.server.db.UserStore
@@ -69,6 +71,8 @@ class ServerTest {
     private val users = UserStore(db)
     private val items = ItemStore(db)
     private val imports = ImportStore(db)
+    private val folderAccess = FolderAccessStore(db)
+    private val creators = CreatorStore(db)
 
     private var downloads = 0
     private val fakeDownloader = Downloader { url, dir ->
@@ -100,7 +104,20 @@ class ServerTest {
     }
 
     private fun serverTest(sso: SsoService? = null, block: suspend ApplicationTestBuilder.(HttpClient) -> Unit) {
-        val services = Services(users, items, imports, worker, sso, scanner, mediaDir, root.resolve("covers"))
+        val services = Services(
+            users = users,
+            items = items,
+            imports = imports,
+            folderAccess = folderAccess,
+            creators = creators,
+            worker = worker,
+            sso = sso,
+            scanner = scanner,
+            avatarFetcher = { _, target -> target.writeBytes(PNG) },
+            mediaDir = mediaDir,
+            coverDir = root.resolve("covers"),
+            avatarDir = root.resolve("avatars"),
+        )
         testApplication {
             application { asmrModule(services) }
             val client = createClient {

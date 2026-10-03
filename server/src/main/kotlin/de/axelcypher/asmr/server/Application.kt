@@ -3,15 +3,19 @@ package de.axelcypher.asmr.server
 import de.axelcypher.asmr.api.ApiJson
 import de.axelcypher.asmr.api.ErrorDto
 import de.axelcypher.asmr.server.auth.SsoService
+import de.axelcypher.asmr.server.db.CreatorStore
+import de.axelcypher.asmr.server.db.FolderAccessStore
 import de.axelcypher.asmr.server.db.ImportStore
 import de.axelcypher.asmr.server.db.ItemStore
 import de.axelcypher.asmr.server.db.UserRecord
 import de.axelcypher.asmr.server.db.UserStore
+import de.axelcypher.asmr.server.imports.AvatarFetcher
 import de.axelcypher.asmr.server.imports.ImportWorker
 import de.axelcypher.asmr.server.library.LibraryScanner
 import de.axelcypher.asmr.server.routes.authRoutes
 import de.axelcypher.asmr.server.routes.importRoutes
 import de.axelcypher.asmr.server.routes.itemRoutes
+import de.axelcypher.asmr.server.routes.libraryRoutes
 import de.axelcypher.asmr.server.routes.userRoutes
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
@@ -37,19 +41,45 @@ import io.ktor.server.routing.routing
 import org.slf4j.LoggerFactory
 import org.slf4j.event.Level
 import java.nio.file.Path
+import kotlin.io.path.isRegularFile
 
 /** Alles, was die Routen brauchen; in Tests mit Fakes befüllt. */
 class Services(
     val users: UserStore,
     val items: ItemStore,
     val imports: ImportStore,
+    val folderAccess: FolderAccessStore,
+    val creators: CreatorStore,
     val worker: ImportWorker,
     val sso: SsoService?,
     val scanner: LibraryScanner,
+    val avatarFetcher: AvatarFetcher,
     val mediaDir: Path,
     /** Erzeugte Video-Vorschaubilder (`@covers/…`). */
     val coverDir: Path,
-)
+    /** Creator-Profilbilder (`@avatars/…`). */
+    val avatarDir: Path,
+) {
+    /**
+     * Löst einen gespeicherten Pfad auf (relativ zum Medienordner oder mit Präfix für den Datenordner),
+     * ohne den jeweiligen Ordner verlassen zu können.
+     */
+    fun storedFile(stored: String): java.io.File {
+        val (root, relative) = when {
+            stored.startsWith(LibraryScanner.DATA_COVER_PREFIX) -> coverDir to stored.removePrefix(LibraryScanner.DATA_COVER_PREFIX)
+            stored.startsWith(AVATAR_PREFIX) -> avatarDir to stored.removePrefix(AVATAR_PREFIX)
+            else -> mediaDir to stored
+        }
+        val base = root.toAbsolutePath().normalize()
+        val file = base.resolve(relative).normalize()
+        if (!file.startsWith(base) || !file.isRegularFile()) throw ApiException(HttpStatusCode.NotFound, "Nicht gefunden")
+        return file.toFile()
+    }
+
+    companion object {
+        const val AVATAR_PREFIX = "@avatars/"
+    }
+}
 
 data class UserPrincipal(val user: UserRecord, val token: String)
 
@@ -60,6 +90,9 @@ fun ApplicationCall.currentUser(): UserRecord = principal<UserPrincipal>()!!.use
 
 fun ApplicationCall.requireAdmin(): UserRecord =
     currentUser().also { if (!it.isAdmin) throw ApiException(HttpStatusCode.Forbidden, "Nur für Admins") }
+
+/** Wer fragt, mit den für ihn ausgeblendeten Ordnern. */
+suspend fun ApplicationCall.viewer(services: Services) = services.folderAccess.viewer(currentUser())
 
 fun ApplicationCall.longParameter(name: String): Long =
     parameters[name]?.toLongOrNull() ?: throw ApiException(HttpStatusCode.BadRequest, "Ungültige $name")
@@ -104,6 +137,7 @@ fun Application.asmrModule(services: Services) {
             authenticate("api") {
                 userRoutes(services)
                 itemRoutes(services)
+                libraryRoutes(services)
                 importRoutes(services)
             }
         }
